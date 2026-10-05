@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from pipeline import config, runner
+from pipeline import compare, config, runner
 from pipeline.ffio import PipelineError, find_tool, probe
 from pipeline.log import log, setup_logging
 
@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--duration", type=float, help="Laenge in s (Standard: bis Ende)")
     ap.add_argument("--set", dest="overrides", action="append", default=[], metavar="KEY=WERT")
     ap.add_argument("--work-dir", type=Path, default=ROOT / "work")
+    ap.add_argument("--no-compare", action="store_true", help="keinen Vergleich (Video + 5 Standbilder) erzeugen")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     setup_logging(args.verbose)
@@ -41,6 +42,11 @@ def main(argv: list[str] | None = None) -> int:
         if out.resolve() == args.input.resolve():
             raise PipelineError("Ausgabe darf nicht die Eingabedatei sein")
         runner.run(ffmpeg, info, cfg, out, args.preset, first, count, args.work_dir)
+        if not args.no_compare:
+            try:
+                compare.make_comparison(ffmpeg, info, out, first, count, out.with_name(out.stem + "_compare"))
+            except PipelineError as e:   # the render itself is done; a failed comparison must not fail the run
+                log.warning("%s", e)
     except PipelineError as e:
         log.error("%s", e)
         return 1
