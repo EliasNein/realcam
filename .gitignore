@@ -1,0 +1,22 @@
+# environments, secrets, local config
+.venv/
+.env*
+*.pem
+*.key
+id_*
+credentials*
+.claude/
+
+# generated / large artifacts
+__pycache__/
+*.pyc
+work/
+output/
+review/
+models/*.pth
+models/*.pkl
+luts/*.cube
+*.mp4
+*.mkv
+*.mov
+*.png

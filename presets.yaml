@@ -1,0 +1,73 @@
+# Presets lassen sich kombinieren: -p export,dashcam-real (spaetere ueberschreiben fruehere, tiefes Merge).
+# Einzelwerte per CLI: --set encode.bitrate=60M
+defaults:
+  segment_seconds: 20
+  segment_overlap_seconds: 0.25  # Kontext vor/nach jeder Segmentgrenze fuer den Motion-Blur (wird verworfen); schon 0.05 s ist bitgleich
+  encode:
+    codec: libx264      # libx264 | libx265 | h264_nvenc | hevc_nvenc | av1_nvenc
+    crf: 16             # CRF (x264/x265) bzw. CQ (NVENC), wenn kein bitrate gesetzt ist
+    preset: slow        # x264/x265: Name; NVENC: p1..p7 (p5-p7 mit Multipass)
+    # bitrate: 80M      # NVENC: Ziel-Bitrate (VBR, maxrate 1.5x); ueberschreibt crf
+    # pix_fmt: yuv420p10le   # 10 Bit gegen Banding (HEVC/AV1)
+  restore:
+    enabled: false
+    model: none         # none | general-x4v3 | lanczos | x4plus (x4plus nur als Benchmark, in keinem Preset)
+    denoise: 0.5        # nur general-x4v3: 0 = Rauschen behalten, 1 = stark entrauschen
+    tile: 384
+    tile_pad: 16
+    target_height: 2160
+    classic:            # klassische Aufbereitung beim Dekodieren (vor dem Motion-Blur)
+      deblock: false
+      deband: false
+  motion:
+    enabled: false
+    out_fps: 60         # Quell-FPS / ganze Zahl (60 -> 30 oder 60)
+    interp_factor: 4    # RIFE-Unterbilder pro Quellintervall (2-4), wird von samples ueberschrieben
+    # samples: 4        # feste Zahl Unterbilder pro Ausgabeframe
+    shutter_angle: 180
+    blend_gamma: 2.2    # Mischen im (angenaeherten) Linearlicht; 1.0 = naiv in Gamma
+    scene_cut: 0.25     # Schwelle fuer harte Schnitte (keine Interpolation darueber), 0 = aus
+    flow_scale: 1.0     # 0.5 = RIFE-Fluss bei halber Aufloesung (schneller)
+  look:                 # Kamera-Look im Encoder-Filtergraph; alle Staerken relativ zur Bildgroesse
+    enabled: false
+    lut: null           # Name in luts/ (identity, subtle, cinematic, dashcam) oder Pfad zu einer .cube
+    lut_strength: 1.0
+    softness: {amount: 0.0, sigma: 0.0012}                      # Mikrokontrast: Anteil weichgezeichnete Kopie
+    ca: {strength: 0.0}                                         # laterale CA, R gegen B (0.0015 = ca. 2 px am Rand bei 2160p)
+    bloom: {strength: 0.0, threshold: 0.78, sigma: 0.016}       # sigma relativ zur Bildhoehe
+    halation: {strength: 0.0, threshold: 0.85, sigma: 0.03, color: [1.0, 0.40, 0.15]}
+    vignette: {strength: 0.0}                                   # Eckenabdunklung 0..1 (cos^4-Abfall)
+    grain: {strength: 0.0, size: 1.0, highlight_falloff: 0.7}   # strength = Standardabweichung in 8-Bit-Stufen; size in px bei 1080p
+
+presets:
+  passthrough: {}       # nur Decode -> Encode, zum Testen der Pipe/Segmente/Farben
+
+  export:               # 1440p60 -> 2160p60, KI-Restaurierung, Motion-Blur
+    restore: {enabled: true, model: general-x4v3, tile: 384, target_height: 2160}
+    motion: {enabled: true, out_fps: 60, samples: 4}
+    encode: {codec: hevc_nvenc, preset: p7, bitrate: 80M, pix_fmt: yuv420p10le}
+
+  export1440:           # 1440p60 ohne Groessenaenderung, ohne KI, klassische Entblockung
+    restore:
+      enabled: true
+      model: none
+      classic: {deblock: true, deband: true}
+    motion: {enabled: true, out_fps: 60, samples: 4}
+    encode: {codec: hevc_nvenc, preset: p7, bitrate: 45M, pix_fmt: yuv420p10le}
+
+  draft:                # 1440p60, nichts davon: nur zum Entwickeln/Vergleichen der Looks
+    encode: {codec: hevc_nvenc, preset: p4, crf: 22}
+
+  # Nur fuer Tests der Einzelstufen
+  motion-test:
+    motion: {enabled: true}
+  look-dev:             # Entwicklungs-Look: alle Effekte aktiv, maessig
+    look:
+      enabled: true
+      lut: dashcam
+      softness: {amount: 0.12}
+      ca: {strength: 0.0015}
+      bloom: {strength: 0.35}
+      halation: {strength: 0.25}
+      vignette: {strength: 0.35}
+      grain: {strength: 5, size: 1.2}

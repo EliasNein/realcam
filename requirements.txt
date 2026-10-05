@@ -1,0 +1,6 @@
+# Python 3.12 venv. Torch from the CUDA 13.0 index:
+#   pip install --index-url https://download.pytorch.org/whl/cu130 torch==2.14.1 torchvision==0.29.1
+#   pip install -r requirements.txt
+spandrel==0.4.2
+PyYAML==6.0.3
+numpy==2.5.2
