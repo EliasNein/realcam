@@ -37,15 +37,25 @@ defaults:
     bloom: {strength: 0.0, threshold: 0.78, sigma: 0.016}       # sigma relativ zur Bildhoehe
     halation: {strength: 0.0, threshold: 0.85, sigma: 0.03, color: [1.0, 0.40, 0.15]}
     vignette: {strength: 0.0}                                   # Eckenabdunklung 0..1 (cos^4-Abfall)
-    grain: {strength: 0.0, size: 1.0, highlight_falloff: 0.7}   # strength = Standardabweichung in 8-Bit-Stufen; size in px bei 1080p
+    grain: {strength: 0.0, size: 2.0, highlight_falloff: 0.7}   # strength = Standardabweichung in 8-Bit-Stufen; size in px bei 1080p
 
 presets:
+  # --- Basis-Presets (Aufloesung, Restaurierung, Motion-Blur, Encoder) ---
   passthrough: {}       # nur Decode -> Encode, zum Testen der Pipe/Segmente/Farben
 
-  export:               # 1440p60 -> 2160p60, KI-Restaurierung, Motion-Blur
+  export:               # 1440p60 -> 2160p60, KI-Restaurierung (fuer Clips mit Schrift/Kennzeichen)
     restore: {enabled: true, model: general-x4v3, tile: 384, target_height: 2160}
     motion: {enabled: true, out_fps: 60, samples: 4}
     encode: {codec: hevc_nvenc, preset: p7, bitrate: 80M, pix_fmt: yuv420p10le}
+
+  export-lite:          # 1440p60 -> 2160p60, Lanczos statt KI, klassische Entblockung
+    restore:
+      enabled: true
+      model: lanczos
+      target_height: 2160
+      classic: {deblock: true, deband: true}
+    motion: {enabled: true, out_fps: 60, samples: 4}
+    encode: {codec: av1_nvenc, preset: p7, bitrate: 80M, pix_fmt: yuv420p10le}
 
   export1440:           # 1440p60 ohne Groessenaenderung, ohne KI, klassische Entblockung
     restore:
@@ -58,16 +68,47 @@ presets:
   draft:                # 1440p60, nichts davon: nur zum Entwickeln/Vergleichen der Looks
     encode: {codec: hevc_nvenc, preset: p4, crf: 22}
 
-  # Nur fuer Tests der Einzelstufen
-  motion-test:
-    motion: {enabled: true}
-  look-dev:             # Entwicklungs-Look: alle Effekte aktiv, maessig
+  # --- Look-Presets: hinter ein Basis-Preset setzen, z.B. -p export-lite,cinematic ---
+  # Sie schalten den Encoder auf AV1 (Korn ueberlebt besser); mit "hevc" als letztem Preset zurueck auf HEVC.
+  subtle:               # leichtes Grading, kaum Linseneffekte
+    encode: {codec: av1_nvenc}
+    look:
+      enabled: true
+      lut: subtle
+      softness: {amount: 0.05}
+      ca: {strength: 0.0006}
+      bloom: {strength: 0.15}
+      halation: {strength: 0.08}
+      vignette: {strength: 0.12}
+      grain: {strength: 2.3}      # verlustfrei ~1.8, +25 % als Ausgleich fuer den Encoder-Verlust
+
+  cinematic:            # Kamera-Look komplett
+    encode: {codec: av1_nvenc}
+    look:
+      enabled: true
+      lut: cinematic
+      softness: {amount: 0.10}
+      ca: {strength: 0.0010}
+      bloom: {strength: 0.30}
+      halation: {strength: 0.30}
+      vignette: {strength: 0.28}
+      grain: {strength: 3.5}      # verlustfrei ~2.8, +25 %
+
+  dashcam-real:         # staerkeres Korn, flacheres Bild, weniger Kontrast
+    encode: {codec: av1_nvenc}
     look:
       enabled: true
       lut: dashcam
-      softness: {amount: 0.12}
-      ca: {strength: 0.0015}
-      bloom: {strength: 0.35}
-      halation: {strength: 0.25}
-      vignette: {strength: 0.35}
-      grain: {strength: 5, size: 1.2}
+      softness: {amount: 0.15}
+      ca: {strength: 0.0018}
+      bloom: {strength: 0.20}
+      halation: {strength: 0.10}
+      vignette: {strength: 0.40}
+      grain: {strength: 5.6}      # verlustfrei ~4.5, +25 %
+
+  hevc:                 # als letztes Preset: HEVC statt AV1
+    encode: {codec: hevc_nvenc}
+
+  # --- Nur fuer Tests der Einzelstufen ---
+  motion-test:
+    motion: {enabled: true}
