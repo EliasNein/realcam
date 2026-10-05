@@ -9,6 +9,8 @@ credentials*
 .claude/
 
 # python
+.venv/
+venv/
 __pycache__/
 *.pyc
 
@@ -39,3 +41,7 @@ tmp/
 *.png
 *.jpg
 *.jpeg
+
+# Claude Code (persönlich)
+.claude/settings.local.json
+CLAUDE.local.md
