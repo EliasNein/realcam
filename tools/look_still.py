@@ -15,12 +15,13 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline.ffio import find_tool  # noqa: E402
-from pipeline.look import build_graph  # noqa: E402
+from pipeline.look import SEED_TOKEN, build_graph, segment_seed  # noqa: E402
 
 
 def render(src: Path, dst: Path, look: dict, fps: Fraction = Fraction(60)) -> None:
     w, h = Image.open(src).size
     graph, assets = build_graph(look, w, h, fps)
+    graph = graph.replace(SEED_TOKEN, str(segment_seed(0)))
     with tempfile.TemporaryDirectory() as tmp:
         for a in assets:
             shutil.copy2(a, Path(tmp) / a.name)

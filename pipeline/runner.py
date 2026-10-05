@@ -14,7 +14,7 @@ from . import stages as stages_mod
 from .ffio import FrameReader, FrameWriter, PipelineError, VideoInfo
 from .log import Progress, Stat, Timings, log
 
-JOB_VERSION = 3   # bump when output of identical configs changes, so stale segments are not reused
+JOB_VERSION = 4   # bump when output of identical configs changes, so stale segments are not reused
 
 
 def _timed(it: Iterable, st: Stat) -> Iterator:
@@ -91,7 +91,7 @@ def run(ffmpeg: str, info: VideoInfo, cfg: dict, out_path: Path, preset: str,
             continue
         part = work / f"seg_{idx:04d}.part.mp4"
         pre = (min(overlap, a) // d) * d if overlap else 0
-        n = _process_segment(ffmpeg, info, chain, cfg, a, b, pre, overlap, part, work, progress, timings)
+        n = _process_segment(ffmpeg, info, chain, cfg, a, b, pre, overlap, part, work, progress, timings, idx)
         os.replace(part, final)
         marker.write_text(json.dumps({"frames": n}))
 
@@ -105,7 +105,7 @@ def _has_motion(chain) -> bool:
 
 
 def _process_segment(ffmpeg: str, info: VideoInfo, chain, cfg: dict, a: int, b: int, pre: int, post: int,
-                     part: Path, work: Path, progress: Progress, timings: Timings) -> int:
+                     part: Path, work: Path, progress: Progress, timings: Timings, seg_index: int) -> int:
     """Renders source frames [a, b). Motion blur reads `pre`/`post` extra source frames as context."""
     reader = FrameReader(ffmpeg, info, a - pre, (b - a) + pre + post, chain.reader_vf)
     d = chain.src_per_out
@@ -117,7 +117,11 @@ def _process_segment(ffmpeg: str, info: VideoInfo, chain, cfg: dict, a: int, b: 
         if stage.name == "motion" and (pre or post):
             stream = _trim(stream, pre // d, math.ceil((b - a) / d))
     enc = Stat("encode")
-    writer = FrameWriter(ffmpeg, part, chain.out_size, chain.out_fps, cfg["encode"], chain.vf, work, chain.graph)
+    graph = chain.graph
+    if graph:
+        from .look import SEED_TOKEN, segment_seed
+        graph = graph.replace(SEED_TOKEN, str(segment_seed(seg_index)))
+    writer = FrameWriter(ffmpeg, part, chain.out_size, chain.out_fps, cfg["encode"], chain.vf, work, graph)
     try:
         for frame in stream:
             t = time.perf_counter()

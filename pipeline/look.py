@@ -15,6 +15,7 @@ from .ffio import PipelineError
 from .luts import LUT_DIR, ensure_luts
 
 MAXV = 65535
+SEED_TOKEN = "@SEED@"   # runner substitutes a fixed, per-segment seed (see segment_seed)
 # Measured on mid gray after the bicubic upscale (1440p and 2160p alike): std = 0.30 * alls 8-bit levels.
 _STD_PER_ALLS = 0.30
 
@@ -153,7 +154,7 @@ def _grain(g: _Graph, w: int, h: int, fps: Fraction, std_levels: float, size: fl
     base, noise, mask, merged, out = g.cur, g.label(), g.label(), g.label(), g.label()
     a, b, c = f"{base}a", f"{base}b", f"{base}c"
     fr = f"{fps.numerator}/{fps.denominator}"
-    g.raw(f"color=c=gray:s={gw}x{gh}:r={fr},format=gray,noise=alls={alls}:allf=t+u:all_seed=1234,"
+    g.raw(f"color=c=gray:s={gw}x{gh}:r={fr},format=gray,noise=alls={alls}:allf=t+u:all_seed={SEED_TOKEN},"
           f"scale={w}:{h}:flags=bicubic,format=gbrp16le[{noise}]")
     t = lambda a, b: f"clip((val/{MAXV}-{a})/({b}-{a}),0,1)"      # noqa: E731
     sm = lambda a, b: f"({t(a, b)}*{t(a, b)}*(3-2*{t(a, b)}))"    # noqa: E731  smoothstep
@@ -163,3 +164,8 @@ def _grain(g: _Graph, w: int, h: int, fps: Fraction, std_levels: float, size: fl
     g.raw(f"[{a}][{noise}]blend=all_mode=grainmerge:all_opacity=1:shortest=1[{merged}]")
     g.raw(f"[{c}][{merged}][{mask}]maskedmerge[{out}]")
     g.cur = out
+
+
+def segment_seed(segment_index: int) -> int:
+    """Fixed but different per segment: the grain pattern does not repeat every segment, runs stay reproducible."""
+    return (1234 + segment_index * 7919) % (2 ** 31 - 1)
