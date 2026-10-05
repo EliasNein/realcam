@@ -1,222 +1,226 @@
 # Video-Enhancer
 
-Lokale Pipeline (Windows, NVIDIA-GPU, Python 3.12), die Forza-Horizon-Gameplay-Aufnahmen in Richtung "Kamerabild" verschiebt:
-Bewegungsunschärfe aus Zwischenbildern, Upscaling, Entblockung, Filmkorn, Linseneffekte und Color Grading über 3D-LUTs.
+A local pipeline (Windows, NVIDIA GPU, Python 3.12) that moves Forza Horizon gameplay recordings towards a "camera image":
+motion blur from interpolated sub-frames, upscaling, deblocking, film grain, lens effects and colour grading through 3D LUTs.
 
-> **Ehrlich gesagt:** Die Pipeline verschiebt die *Bildanmutung* (Unschärfe, Korn, Grading, Linseneffekte), sie erzeugt **keinen
-> Fotorealismus**. Geometrie, Texturen, Beleuchtung und Materialien bleiben Spielgrafik. Eine Diffusion-Stufe, die mehr leisten
-> könnte, ist **noch nicht eingebaut** (siehe [Diffusion](#diffusion-noch-nicht-vorhanden)).
+> **Honest note:** The pipeline shifts the *look* of the footage (blur, grain, grading, lens effects). It does **not create
+> photorealism**. Geometry, textures, lighting and materials remain game graphics. A diffusion stage that could do more is
+> **not built in yet** (see [Diffusion](#diffusion-not-available-yet)).
 
-Alles läuft lokal, nichts wird hochgeladen. Gedacht für private Nutzung.
+Everything runs locally, nothing is uploaded. Intended for private use.
 
-## Ablauf
+> **Note:** The console messages of the tool are currently in German. The troubleshooting table below quotes them verbatim and explains them.
+
+## How it works
 
 ```
-Quelle (FFmpeg, rawvideo-Pipe) -> [Entblocken/Deband] -> [RIFE + Shutter-Mischung] -> [Real-ESRGAN | Lanczos]
-        -> FFmpeg-Filtergraph im Encoder: Weichzeichner, CA, Bloom, Halation, Vignette, LUT, Korn -> NVENC
+source (FFmpeg, rawvideo pipe) -> [deblock/deband] -> [RIFE + shutter blend] -> [Real-ESRGAN | Lanczos]
+        -> FFmpeg filter graph inside the encoder: softness, CA, bloom, halation, vignette, LUT, grain -> NVENC
 ```
 
-* Streaming: keine PNG-Ordner, Frames laufen per Pipe von FFmpeg durch die GPU-Stufen in den Encoder.
-* Segmente (Standard 20 s) mit Resume: ein abgebrochener Lauf wird mit demselben Aufruf fortgesetzt, fertige Segmente werden übersprungen.
-* Original-Ton wird 1:1 kopiert, die Segmente werden verlustfrei zusammengefügt.
-* Pro Lauf entsteht ein Vergleich (Original links, Ergebnis rechts) als Video und als 5 Standbilder.
+* Streaming: no PNG folders; frames travel from FFmpeg through the GPU stages into the encoder via pipes.
+* Segments (default 20 s) with resume: an interrupted run continues with the same command, finished segments are skipped.
+* The original audio is copied 1:1, the segments are joined losslessly.
+* Every run produces a comparison (original left, result right) as a video and as 5 stills.
 
-## Voraussetzungen
+## Requirements
 
-* Windows 10/11, NVIDIA-GPU mit 12 GB VRAM empfohlen (getestet: RTX 4070). Gemessen beim 2-Minuten-Lauf mit `export-lite,cinematic`: Spitze 5,8 GB VRAM insgesamt (davon ca. 1,5 GB Desktop), Python ca. 1,5 GB RAM, FFmpeg-Prozesse ca. 3,4 GB RAM; alles flach über 29 Minuten, kein Leck. Die KI-Restaurierung allein braucht ca. 1 GB VRAM.
-* NVENC (HEVC; AV1 nur ab RTX-40-Serie), aktueller NVIDIA-Treiber.
-* Python 3.12, FFmpeg (mit `libvmaf` nur für eigene Messungen nötig).
+* Windows 10/11, NVIDIA GPU with 12 GB VRAM recommended (tested: RTX 4070). Measured in the 2-minute run with `export-lite,cinematic`: peak 5.8 GB VRAM in total (about 1.5 GB of it desktop), Python about 1.5 GB RAM, FFmpeg processes about 3.4 GB RAM; flat over 29 minutes, no leak. The AI restoration alone needs about 1 GB VRAM.
+* NVENC (HEVC; AV1 only on the RTX 40 series and newer), current NVIDIA driver.
+* Python 3.12, FFmpeg (`libvmaf` is only needed for your own measurements).
 
 ## Installation
 
 ```powershell
-# 1. Python 3.12 und FFmpeg (Gyan full build)
+# 1. Python 3.12 and FFmpeg (Gyan full build)
 winget install -e --id Python.Python.3.12 --scope user
 winget install -e --id Gyan.FFmpeg --scope user
-# danach neue Shell öffnen, damit PATH aktualisiert ist
+# then open a new shell so that PATH is updated
 
-# 2. virtuelle Umgebung
+# 2. virtual environment
 py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install --upgrade pip
 
-# 3. PyTorch mit CUDA 13.0 (Treiber mit CUDA >= 13.0, geprüft mit Treiber 617.14), danach die übrigen Pakete
+# 3. PyTorch with CUDA 13.0 (driver with CUDA >= 13.0, verified with driver 617.14), then the remaining packages
 .\.venv\Scripts\python -m pip install --index-url https://download.pytorch.org/whl/cu130 torch==2.14.1 torchvision==0.29.1
 .\.venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-Ältere Treiber: passenden Wheel-Index wählen (`cu126`, `cu128`), Versionen entsprechend anpassen.
-`find_tool` sucht FFmpeg im PATH und im WinGet-Ordner; fehlt es, nennt die Fehlermeldung den Installationsbefehl.
+Older drivers: choose the matching wheel index (`cu126`, `cu128`) and adjust the versions accordingly.
+`find_tool` looks for FFmpeg in `PATH` and in the WinGet folder; if it is missing, the error message gives the install command.
 
-### Modellgewichte
+### Model weights
 
-Die Gewichte liegen **nicht im Repository** (`models/` ist in `.gitignore`). Einmalig in den Ordner `models/` laden:
+The weights are **not in the repository** (`models/` is in `.gitignore`). Download them once into the `models/` folder:
 
 ```powershell
 mkdir models
 curl.exe -L -o models/realesr-general-x4v3.pth     https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
 curl.exe -L -o models/realesr-general-wdn-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-wdn-x4v3.pth
 curl.exe -L -o models/flownet_v4.25.pkl            https://github.com/HolyWu/vs-rife/releases/download/model/flownet_v4.25.pkl
-# optional, nur für tools/bench_restore.py (in keinem Preset verwendet):
+# optional, only for tools/bench_restore.py (not used by any preset):
 curl.exe -L -o models/RealESRGAN_x4plus.pth        https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
 ```
 
-| Datei | Verwendung | Größe (Byte) | SHA256 der geprüften Datei* |
+| File | Used for | Size (bytes) | SHA256 of the verified file* |
 |---|---|---|---|
-| `realesr-general-x4v3.pth` | KI-Restaurierung (`export`) | 4 885 111 | `8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292` |
-| `realesr-general-wdn-x4v3.pth` | Entrauschen (Mischung mit obiger Datei) | 4 885 111 | `1641f8c4464b9f097c9fdda5589273713f67cf59f3d909e0bd688f0cee269dca` |
-| `flownet_v4.25.pkl` | RIFE v4.25 (Bewegungsunschärfe) | 24 636 301 | `6615790efd627772917205db291f51cd392528a157ecbb2ecaeec3bff8eb6de2` |
-| `RealESRGAN_x4plus.pth` | nur Benchmark | 67 040 989 | `4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1` |
+| `realesr-general-x4v3.pth` | AI restoration (`export`) | 4,885,111 | `8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292` |
+| `realesr-general-wdn-x4v3.pth` | Denoising (blended with the file above) | 4,885,111 | `1641f8c4464b9f097c9fdda5589273713f67cf59f3d909e0bd688f0cee269dca` |
+| `flownet_v4.25.pkl` | RIFE v4.25 (motion blur) | 24,636,301 | `6615790efd627772917205db291f51cd392528a157ecbb2ecaeec3bff8eb6de2` |
+| `RealESRGAN_x4plus.pth` | benchmark only | 67,040,989 | `4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1` |
 
-\* Das sind die Prüfsummen der Dateien, mit denen die Pipeline entwickelt wurde, keine offiziellen Werte der Autoren.
-`flownet_v4.25.pkl` wird mit `torch.load(..., weights_only=True)` gelesen (keine Code-Ausführung aus der Datei).
+\* These are the checksums of the files the pipeline was developed with, not official values from the authors.
+`flownet_v4.25.pkl` is read with `torch.load(..., weights_only=True)` (no code is executed from the file).
 
-Die LUTs (`luts/*.cube`) liegen im Repository; fehlende Standard-LUTs erzeugt `python pipeline/luts.py` neu.
+The LUTs (`luts/*.cube`) are part of the repository; missing default LUTs are regenerated by `python pipeline/luts.py`.
 
-## Schnellstart
+## Quick start
 
 ```powershell
-# Kurztest: 10 s ab Sekunde 40 mit dem schnellen Draft-Preset und Look
-.\.venv\Scripts\python enhance.py "C:\Pfad\clip.mp4" -p draft,cinematic --start 40 --duration 10
+# short test: 10 s from second 40 with the fast draft preset and a look
+.\.venv\Scripts\python enhance.py "C:\path\clip.mp4" -p draft,cinematic --start 40 --duration 10
 
-# 2160p60, Lanczos-Upscale, Look (Basis-Preset zuerst, Look-Preset zuletzt)
-.\.venv\Scripts\python enhance.py "C:\Pfad\clip.mp4" -p export-lite,cinematic
+# 2160p60, Lanczos upscale, look (base preset first, look preset last)
+.\.venv\Scripts\python enhance.py "C:\path\clip.mp4" -p export-lite,cinematic
 
-# mit KI-Restaurierung (für Clips mit Schrift und Kennzeichen)
-.\.venv\Scripts\python enhance.py "C:\Pfad\clip.mp4" -p export,dashcam-real
+# with AI restoration (for clips with text and licence plates)
+.\.venv\Scripts\python enhance.py "C:\path\clip.mp4" -p export,dashcam-real
 
-# 1440p60 ohne Größenänderung, AV1 statt HEVC
-.\.venv\Scripts\python enhance.py "C:\Pfad\clip.mp4" -p export1440,subtle,av1
+# 1440p60 without resizing, AV1 instead of HEVC
+.\.venv\Scripts\python enhance.py "C:\path\clip.mp4" -p export1440,subtle,av1
 
-# einzelne Werte überschreiben
-.\.venv\Scripts\python enhance.py "C:\Pfad\clip.mp4" -p export-lite,cinematic --set encode.bitrate=60M --set look.grain.strength=4
+# override single values
+.\.venv\Scripts\python enhance.py "C:\path\clip.mp4" -p export-lite,cinematic --set encode.bitrate=60M --set look.grain.strength=4
 ```
 
-`python enhance.py -h` zeigt alle Optionen. Ergebnis: `output/<name>_<preset>.mp4` und `output/<name>_<preset>_compare/` (`compare.mp4` + `still_1..5.png`,
-abschaltbar mit `--no-compare`). Abbrechen mit Strg+C; derselbe Aufruf setzt fort. Ist die Ausgabe schon fertig, wird die Datei übersprungen
-(`--overwrite` schreibt sie neu und verwendet dabei fertige Segmente aus `work/`; für ein komplett neues Rendern den passenden Ordner in `work/` löschen).
+`python enhance.py -h` lists all options. Result: `output/<name>_<preset>.mp4` and `output/<name>_<preset>_compare/` (`compare.mp4` + `still_1..5.png`,
+can be disabled with `--no-compare`). Abort with Ctrl+C; the same command resumes. If the output is already finished, the file is skipped
+(`--overwrite` rewrites it and reuses finished segments from `work/`; to re-render completely, delete the matching folder in `work/`).
 
-## Stapelmodus
+## Batch mode
 
-Mehrere Dateien oder ein ganzer Ordner laufen nacheinander mit demselben Preset:
+Several files or a whole folder are processed one after another with the same preset:
 
 ```powershell
-# alle Videos eines Ordners (mp4, mkv, mov, m4v, webm, avi; nicht rekursiv)
+# all videos in a folder (mp4, mkv, mov, m4v, webm, avi; not recursive)
 .\.venv\Scripts\python enhance.py -p export-lite,cinematic --input-dir clips\ --output-dir out\
 
-# oder einzelne Dateien
+# or individual files
 .\.venv\Scripts\python enhance.py a.mp4 b.mp4 -p export-lite,cinematic --output-dir out\
 ```
 
-* Ein Fehler bei einer Datei (defekt, Encoder-Absturz, unerwarteter Fehler) bricht den Rest **nicht** ab; er wird protokolliert und der Stapel läuft weiter.
-* Am Ende steht eine Zusammenfassung mit Datei, Dauer des verarbeiteten Videos, benötigter Zeit und Ergebnis (`ok`, `uebersprungen`, `FEHLER`, `nicht verarbeitet`).
-  Exit-Code 1, wenn mindestens eine Datei fehlschlug; bei Strg+C Exit-Code 130 und die restlichen Dateien stehen als `nicht verarbeitet` in der Zusammenfassung.
-* Bereits fertige Ausgaben werden übersprungen (`--overwrite` erzwingt das Neuschreiben). Eine unterbrochene Datei setzt beim nächsten Aufruf über ihre Segmente fort.
-* Ausgabenamen: `<name>_<preset>.mp4` im Ausgabeordner. Gleiche Dateinamen aus verschiedenen Ordnern werden vor dem Start abgelehnt; `-o` gilt nur für eine einzelne Datei.
-* Liegen Ausgabe- und Eingabeordner gleich, werden die Ergebnisse nicht erneut als Eingabe gelesen. `--start`/`--duration` gelten für alle Dateien.
+* An error in one file (corrupt file, encoder crash, unexpected error) does **not** abort the rest; it is logged and the batch continues.
+* At the end a summary lists file, duration of the processed video, time taken and result (printed as `ok`, `uebersprungen` = skipped, `FEHLER` = error, `nicht verarbeitet` = not processed).
+  The exit code is 1 if at least one file failed; on Ctrl+C the exit code is 130 and the remaining files appear as `nicht verarbeitet` in the summary.
+* Already finished outputs are skipped (`--overwrite` forces rewriting). An interrupted file resumes through its segments on the next call.
+* Output names: `<name>_<preset>.mp4` in the output folder. Identical file names from different folders are rejected before the start; `-o` only works for a single file.
+* If the output and input folders are the same, results are not read again as input. `--start`/`--duration` apply to all files.
 
 ## Presets
 
-Presets lassen sich kombinieren; spätere überschreiben frühere. Reihenfolge: **Basis, Look, Encoder**.
+Presets can be combined; later ones override earlier ones. Order: **base, look, encoder**.
 
-| Basis-Preset | Was es tut | Zeit pro Videominute* |
+| Base preset | What it does | Time per video minute* |
 |---|---|---|
-| `passthrough` | nur Decode und Encode (Test der Pipe) | nicht gemessen |
-| `draft` | 1440p60, keine Stufen, schneller HEVC-Encode; zum Entwickeln und Vergleichen der Looks | 0,6 min ohne Look, 4,9 min mit Look (der CPU-Look bremst) |
-| `export1440` | 1440p60 ohne Größenänderung, Deblock + Deband, Bewegungsunschärfe (4 Samples), HEVC 45M, 10 Bit | 13–14 min |
-| `export-lite` | 2160p60, Lanczos auf der GPU, Deblock + Deband, Bewegungsunschärfe, AV1 80M, 10 Bit | 13,5 min (+ ca. 0,7 min für den automatischen Vergleich) |
-| `export` | wie `export-lite`, aber KI-Restaurierung (Real-ESRGAN general-x4v3, Tile 384), HEVC 80M | ca. 34 min |
+| `passthrough` | decode and encode only (pipe test) | not measured |
+| `draft` | 1440p60, no stages, fast HEVC encode; for developing and comparing looks | 0.6 min without look, 4.9 min with look (the CPU look is the bottleneck) |
+| `export1440` | 1440p60 without resizing, deblock + deband, motion blur (4 samples), HEVC 45M, 10-bit | 13–14 min |
+| `export-lite` | 2160p60, Lanczos on the GPU, deblock + deband, motion blur, AV1 80M, 10-bit | 13.5 min (+ about 0.7 min for the automatic comparison) |
+| `export` | like `export-lite`, but with AI restoration (Real-ESRGAN general-x4v3, tile 384), HEVC 80M | about 34 min |
 
-\* Quelle 1440p60, gemessen auf RTX 4070 + Ryzen 5 7600 mit 10-s-Clips bzw. dem 2-Minuten-Lauf; Look-Presets kosten bei den `export*`-Presets
-nichts extra, weil der Look parallel im Encoder-Prozess läuft. Der Look allein schafft auf der CPU 5,2 fps bei 2160p und 11,8 fps bei 1440p,
-bremst also nur `draft`. Reale Zeiten schwanken je Quelle und System um etwa ±10 %.
+\* 1440p60 source, measured on an RTX 4070 + Ryzen 5 7600 with 10 s clips and the 2-minute run; look presets cost nothing extra with the `export*` presets
+because the look runs in parallel in the encoder process. The look alone manages 5.2 fps at 2160p and 11.8 fps at 1440p on the CPU,
+so it only slows down `draft`. Real times vary by about ±10 % depending on source and system.
 
-| Look-Preset | Charakter | Korn (Stärke) | LUT |
+| Look preset | Character | Grain (strength) | LUT |
 |---|---|---|---|
-| `subtle` | leichtes Grading, kaum Linseneffekte | 2,3 | `subtle` |
-| `cinematic` | kompletter Kamera-Look, wärmerer Ton, moderates Korn | 3,5 | `cinematic` |
-| `dashcam-real` | flach, entsättigt, angehobene Schwarzwerte, kräftiges Korn | 5,6 | `dashcam` |
+| `subtle` | light grading, hardly any lens effects | 2.3 | `subtle` |
+| `cinematic` | full camera look, warmer tone, moderate grain | 3.5 | `cinematic` |
+| `dashcam-real` | flat, desaturated, lifted blacks, strong grain | 5.6 | `dashcam` |
 
-Look-Presets schalten den Encoder auf **HEVC**; mit `av1` als letztem Preset wird AV1 verwendet, mit `hevc` wird HEVC erzwungen.
-(`export-lite` allein, ohne Look, nutzt AV1.)
+Look presets switch the encoder to **HEVC**; `av1` as the last preset selects AV1, `hevc` forces HEVC.
+(`export-lite` alone, without a look, uses AV1.)
 
-### HEVC oder AV1?
+### HEVC or AV1?
 
 | | HEVC (`hevc_nvenc`) | AV1 (`av1_nvenc`) |
 |---|---|---|
-| Korn-Erhalt nach dem Encoder (Anteil des echten Korns) | 0,68 (1440p/45M), 0,77 (2160p/80M) | 0,63 (1440p/45M), 0,73 (2160p/80M) |
-| Bildstruktur (VMAF, 1440p/45M, mit Korn) | 93,6 | 95,3 |
-| Kompatibilität | läuft praktisch überall (Hardware-Decoder in fast jedem Gerät) | braucht neuere Player/Hardware-Decoder; Encode erst ab RTX 40 |
+| Grain retention after the encoder (share of the real grain) | 0.68 (1440p/45M), 0.77 (2160p/80M) | 0.63 (1440p/45M), 0.73 (2160p/80M) |
+| Image structure (VMAF, 1440p/45M, with grain) | 93.6 | 95.3 |
+| Compatibility | plays practically everywhere (hardware decoders in almost every device) | needs newer players/hardware decoders; encoding only on RTX 40 and newer |
 
-HEVC ist Standard der Look-Presets, weil der Korn-Charakter hier wichtiger ist als der VMAF-Wert. NVENC glättet Korn grundsätzlich:
-bei 45M/1440p bleiben nur etwa zwei Drittel des Korns erhalten, deshalb sind die Stärken der Look-Presets um ca. 25 % über dem verlustfreien Zielwert
-eingestellt. Gröberes Korn (`look.grain.size`, Standard 2,0 px bei 1080p) überlebt besser als feines.
+HEVC is the default of the look presets because the grain character matters more here than the VMAF score. NVENC smooths grain in general:
+at 45M/1440p only about two thirds of the grain survive, which is why the strengths of the look presets are set about 25 % above the lossless target value.
+Coarser grain (`look.grain.size`, default 2.0 px at 1080p) survives better than fine grain.
 
-### Reproduzierbarkeit und Resume
+### Reproducibility and resume
 
-Zwei Läufe mit gleicher Konfiguration liefern byteidentische Dateien (geprüft mit `export-lite,cinematic` über ein komplettes 20-s-Segment, 1200 Frames bei 2160p); das Korn-Muster ist pro Segment fest, aber von Segment zu Segment verschieden.
-Resume: Ein abgebrochener Lauf (hart beendet mitten in Segment 4 von 6) setzt mit dem gleichen Aufruf fort, die fertigen Segmente bleiben unverändert (MD5 geprüft), nur das angebrochene Segment wird neu gerechnet.
-Die Arbeitsordner (`work/<name>_<preset>_<hash>`) enthalten die Segmente; sie dürfen nach dem Lauf gelöscht werden.
+Two runs with the same configuration produce byte-identical files (verified with `export-lite,cinematic` over a complete 20 s segment, 1200 frames at 2160p); the grain pattern is fixed per segment but differs from segment to segment.
+Resume: a run that was killed hard in the middle of segment 4 of 6 continues with the same command, the finished segments stay unchanged (MD5 verified), only the interrupted segment is rendered again.
+The work folders (`work/<name>_<preset>_<hash>`) contain the segments; they may be deleted after the run.
 
-## Konfiguration
+## Configuration
 
-Alle Werte stehen in [presets.yaml](presets.yaml) (`defaults`, `presets`). Eine eigene Datei lädt `--config meine.yaml`.
-Einzelwerte überschreibt `--set abschnitt.schlüssel=wert`. Wichtige Abschnitte:
+All values are in [presets.yaml](presets.yaml) (`defaults`, `presets`). Load your own file with `--config my.yaml`.
+Override single values with `--set section.key=value`. Important sections:
 
-* `segment_seconds`, `segment_overlap_seconds` (Kontext für die Bewegungsunschärfe, 4 Frames reichen für nahtlose Übergänge)
+* `segment_seconds`, `segment_overlap_seconds` (context for the motion blur; 4 frames are enough for seamless transitions)
 * `restore`: `model` (`none`, `lanczos`, `general-x4v3`), `denoise`, `tile`, `target_height`, `classic.deblock/deband`
-* `motion`: `out_fps`, `samples` (Unterbilder pro Ausgabeframe), `shutter_angle`, `blend_gamma`, `flow_scale`
-* `look`: `lut`, `softness`, `ca`, `bloom`, `halation`, `vignette`, `grain` (alle Stärken relativ zur Bildgröße, 1440p und 2160p sehen gleich aus)
+* `motion`: `out_fps`, `samples` (sub-frames per output frame), `shutter_angle`, `blend_gamma`, `flow_scale`
+* `look`: `lut`, `softness`, `ca`, `bloom`, `halation`, `vignette`, `grain` (all strengths are relative to the image size, so 1440p and 2160p look the same)
 * `encode`: `codec`, `bitrate`, `crf`/CQ, `preset`, `pix_fmt`
 
-**Eigene LUTs:** eine `.cube`-Datei (beliebige Größe, 3D) nach `luts/` legen und `look.lut: name` setzen; bestehende Dateien werden nie überschrieben.
+**Your own LUTs:** put a `.cube` file (any size, 3D) into `luts/` and set `look.lut: name`; existing files are never overwritten.
 
-## Fehlersuche
+## Troubleshooting
 
-| Meldung | Ursache und Abhilfe |
+The messages are printed in German; the table quotes them as printed.
+
+| Message | Cause and remedy |
 |---|---|
-| `'ffmpeg' nicht gefunden` | FFmpeg installieren (siehe oben), neue Shell öffnen |
-| `Modell fehlt` / `RIFE-Gewichte fehlen` | Gewichte laden ([Modellgewichte](#modellgewichte)) |
-| `Keine CUDA-GPU gefunden` | NVIDIA-Treiber prüfen (`nvidia-smi`), CUDA-Build von PyTorch installiert? |
-| `GPU-Speicher reicht nicht` | kleinere `restore.tile` (z. B. 256), andere GPU-Programme schließen |
-| `Datei nicht lesbar oder defekt` | Quelle mit `ffprobe` prüfen, ggf. neu aufnehmen |
-| `Segment hat N statt M Frames` | Quelle bricht ab oder ist defekt |
-| Warnung zu HDR | HDR wird nicht behandelt, Farben stimmen dann nicht (Aufnahme in SDR/BT.709 erforderlich) |
-| Warnung zu variabler Framerate | wird beim Dekodieren auf die höchste Rate konstant umgerechnet (fps-Filter), Frames werden wiederholt |
+| `'ffmpeg' nicht gefunden` | FFmpeg not found: install it (see above) and open a new shell |
+| `Modell fehlt` / `RIFE-Gewichte fehlen` | Model / RIFE weights missing: download the weights ([Model weights](#model-weights)) |
+| `Keine CUDA-GPU gefunden` | No CUDA GPU found: check the NVIDIA driver (`nvidia-smi`) and whether the CUDA build of PyTorch is installed |
+| `GPU-Speicher reicht nicht` | Not enough GPU memory: use a smaller `restore.tile` (e.g. 256), close other GPU programs |
+| `Datei nicht lesbar oder defekt` | File unreadable or corrupt: check the source with `ffprobe`, re-record if necessary |
+| `Segment hat N statt M Frames` | Segment has N instead of M frames: the source ends early or is damaged |
+| HDR warning | HDR is not handled, colours will be wrong (SDR/BT.709 recording required) |
+| Variable frame rate warning | the source is resampled to its peak frame rate while decoding (fps filter), frames are repeated |
 
-## Einschränkungen
+## Limitations
 
-* Windows und NVIDIA (NVENC) vorausgesetzt; getestet nur mit 1440p60-H.264-Quellen in SDR/BT.709.
-* HUD wird wie das Bild behandelt (mit interpoliert und verwischt); Aufnahmen ohne HUD sind vorgesehen.
-* Der Look-Graph läuft auf der CPU (16-Bit); bei 2160p etwa 5 fps.
-* Segmentgrenzen: Die Bewegungsunschärfe ist bitgleich zum Einzelsegment-Lauf (getestet, 4 Frames Kontext genügen). Im 2-Minuten-Lauf (6 Segmente) springt das Bild an keiner Grenze; nur der erste Frame jedes Segments hat 5–18 % mehr Korn (Keyframe-Start des Encoders, ein Frame lang, kaum sichtbar). Das Korn wiederholt sich nicht von Segment zu Segment.
-* Lanczos- und Real-ESRGAN-Upscaling erfinden keine Details; `export` schärft Kanten und Schrift sichtbar, bringt in Vegetation und Straße wenig.
+* Windows and NVIDIA (NVENC) required; tested only with 1440p60 H.264 sources in SDR/BT.709.
+* The HUD is treated like the rest of the image (interpolated and blurred as well); recordings without HUD are intended.
+* The look graph runs on the CPU (16-bit); about 5 fps at 2160p.
+* Segment boundaries: the motion blur is bit-identical to a single-segment run (tested, 4 frames of context are enough). In the 2-minute run (6 segments) the picture does not jump at any boundary; only the first frame of each segment has 5–18 % more grain (keyframe start of the encoder, one frame long, hardly visible). The grain does not repeat from segment to segment.
+* Lanczos and Real-ESRGAN upscaling do not invent details; `export` visibly sharpens edges and text, but adds little in vegetation and road.
 
-## Diffusion (noch nicht vorhanden)
+## Diffusion (not available yet)
 
-Eine optionale Diffusion-Stufe (Video-zu-Video mit Tiefen-/Kantenführung) ist geplant, aber **nicht eingebaut**. Vorab-Einschätzung, ungetestet:
-auf 12 GB wären nur quantisierte Modelle bei ca. 480p möglich, mit Drift bei Lackierung/Schrift und Flackern an Chunk-Grenzen. Es gibt dafür
-keinen Schalter, keine Konfiguration und keinen Code.
+An optional diffusion stage (video-to-video with depth/edge guidance) is planned but **not built in**. Preliminary assessment, untested:
+on 12 GB only quantised models at about 480p would be possible, with drift in paint and text and flicker at chunk boundaries. There is
+no switch, no configuration and no code for it.
 
-## Lizenzen
+## Licences
 
-Der Code dieses Repositories steht unter keiner eigenen Lizenz-Datei; die Lizenzen der Bestandteile:
+The code of this repository has no licence file of its own; the licences of the components:
 
-| Bestandteil | Lizenz | Hinweis |
+| Component | Licence | Note |
 |---|---|---|
-| Real-ESRGAN (Code und Modelle `realesr-general-x4v3`, `-wdn-`, `x4plus`) | BSD 3-Clause, Copyright (c) 2021 Xintao Wang | laut `LICENSE` im Repository xinntao/Real-ESRGAN; Gewichte werden von dort geladen, nicht mitgeliefert |
-| RIFE / Practical-RIFE (hzwer) | MIT | Gewichte `flownet_v4.25.pkl` stammen aus dem Release HolyWu/vs-rife; Practical-RIFE nennt die Modelle unter derselben MIT-Lizenz |
-| Mitgelieferte RIFE-Architektur `pipeline/rife_arch/` (`IFNet_HDv3_v4_25.py`, `warplayer.py`) | MIT, Copyright (c) 2021 HolyWu | aus vs-rife; Lizenztext: `pipeline/rife_arch/LICENSE-vs-rife-MIT.txt` |
-| spandrel | MIT | lädt die Real-ESRGAN-Netze |
-| PyTorch / torchvision | BSD-artig (Apache-2.0/BSD-3 u. a.) | nicht mitgeliefert, per pip |
-| numpy, PyYAML, Pillow | BSD-3-Clause, MIT, MIT-CMU | per pip |
-| FFmpeg (Gyan *full build*) | GPL v3 (`--enable-gpl --enable-version3`) | wird nicht mitgeliefert, nur als externes Programm aufgerufen |
-| `luts/*.cube` | selbst erzeugt (`pipeline/luts.py`) | frei austauschbar |
+| Real-ESRGAN (code and models `realesr-general-x4v3`, `-wdn-`, `x4plus`) | BSD 3-Clause, Copyright (c) 2021 Xintao Wang | according to the `LICENSE` in the xinntao/Real-ESRGAN repository; weights are downloaded from there, not shipped |
+| RIFE / Practical-RIFE (hzwer) | MIT | the weights `flownet_v4.25.pkl` come from the HolyWu/vs-rife release; Practical-RIFE states the models are under the same MIT licence |
+| Bundled RIFE architecture `pipeline/rife_arch/` (`IFNet_HDv3_v4_25.py`, `warplayer.py`) | MIT, Copyright (c) 2021 HolyWu | from vs-rife; licence text: `pipeline/rife_arch/LICENSE-vs-rife-MIT.txt` |
+| spandrel | MIT | loads the Real-ESRGAN networks |
+| PyTorch / torchvision | BSD-style (Apache-2.0/BSD-3 among others) | not shipped, installed via pip |
+| numpy, PyYAML, Pillow | BSD-3-Clause, MIT, MIT-CMU | installed via pip |
+| FFmpeg (Gyan *full build*) | GPL v3 (`--enable-gpl --enable-version3`) | not shipped, only called as an external program |
+| `luts/*.cube` | generated by the project (`pipeline/luts.py`) | freely replaceable |
 
-Das Spielmaterial gehört den Rechteinhabern; diese Pipeline verändert nur die Darstellung und ist für private Nutzung gedacht.
-Bei Weitergabe von Gewichten oder Ergebnissen die Originallizenzen der jeweiligen Repositories prüfen; dies ist keine Rechtsberatung.
+The game footage belongs to its rights holders; this pipeline only changes the presentation and is intended for private use.
+When redistributing weights or results, check the original licences of the respective repositories; this is not legal advice.
 
-## Entwicklung
+## Development
 
-* `tools/bench_restore.py`: Geschwindigkeit und VRAM der Restaurierungs-Pfade auf echten Frames.
-* `tools/look_still.py`: den Look auf ein Standbild anwenden (zum Einstellen einzelner Effekte).
-* Git: Branch `feature/camera-look-pipeline`; Modellgewichte, Videos, Testbilder und Arbeitsordner sind in `.gitignore`.
+* `tools/bench_restore.py`: speed and VRAM of the restoration paths on real frames.
+* `tools/look_still.py`: apply the look to a still image (for tuning single effects).
+* Git: model weights, videos, test images and work folders are in `.gitignore`.
