@@ -65,7 +65,6 @@ class Restorer:
         else:
             self.net, self.scale = load_model(model, denoise, device)
             self.net = self.net.to(memory_format=torch.channels_last)
-        torch.backends.cudnn.benchmark = True
         self._mats: dict[tuple, tuple] = {}
 
     def _infer(self, x: torch.Tensor) -> torch.Tensor:
