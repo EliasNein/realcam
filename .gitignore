@@ -1,22 +1,41 @@
 # environments, secrets, local config
 .venv/
-.env*
+.env
+.env.*
 *.pem
 *.key
 id_*
 credentials*
 .claude/
 
-# generated / large artifacts
+# python
 __pycache__/
 *.pyc
-work/
-output/
+
+# model weights (see README for download instructions)
+models/
+
+# generated output, review material, work/segment folders, temp files
 review/
-models/*.pth
-models/*.pkl
-luts/*.cube
+output/
+work/
+tmp/
+*.tmp
+*.part
+*.part.*
+
+# videos and audio
 *.mp4
 *.mkv
 *.mov
+*.webm
+*.avi
+*.wav
+*.aac
+*.m4a
+*.mp3
+
+# images from test runs (crops, montages, stills)
 *.png
+*.jpg
+*.jpeg
