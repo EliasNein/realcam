@@ -19,7 +19,7 @@ _FILES = {
 def _load_state(name: str) -> dict:
     path = MODELS_DIR / _FILES[name]
     if not path.is_file():
-        raise PipelineError(f"Modell fehlt: {path}")
+        raise PipelineError(f"Modell fehlt: {path} (Download siehe README, Abschnitt \"Modellgewichte\")")
     ckpt = torch.load(path, map_location="cpu", weights_only=True)
     for key in ("params_ema", "params"):
         if key in ckpt:

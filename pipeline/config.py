@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from .ffio import CODEC_NAMES, PipelineError
+from .ffio import CODEC_NAMES, PipelineError, _bitrate_mbit
 
 
 def _merge(base: dict, over: dict) -> dict:
@@ -55,6 +55,8 @@ def _validate(cfg: dict) -> None:
     codec = cfg.get("encode", {}).get("codec")
     if codec not in CODEC_NAMES:
         raise PipelineError(f"encode.codec '{codec}' ungueltig. Erlaubt: {', '.join(CODEC_NAMES)}")
+    if cfg["encode"].get("bitrate"):
+        _bitrate_mbit(cfg["encode"]["bitrate"])
     pix_fmt = cfg["encode"].get("pix_fmt", "yuv420p")
     if pix_fmt not in ("yuv420p", "yuv420p10le"):
         raise PipelineError(f"encode.pix_fmt '{pix_fmt}' ungueltig. Erlaubt: yuv420p, yuv420p10le")

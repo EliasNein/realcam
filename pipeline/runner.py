@@ -59,6 +59,9 @@ def _job_key(info: VideoInfo, cfg: dict, first: int, count: int) -> str:
 
 def run(ffmpeg: str, info: VideoInfo, cfg: dict, out_path: Path, preset: str,
         first: int, count: int, work_root: Path) -> None:
+    if info.vfr:
+        log.warning("Variable Framerate erkannt: wird beim Dekodieren auf konstante %.3f fps umgerechnet (fps-Filter).",
+                    float(info.fps))
     if info.is_hdr:
         log.warning("HDR-Quelle (%s) erkannt: Farben werden als SDR/BT.709 behandelt und sehen falsch aus.",
                     info.color_transfer)

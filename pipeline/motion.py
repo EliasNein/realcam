@@ -20,7 +20,7 @@ class Rife:
 
     def __init__(self, width: int, height: int, flow_scale: float = 1.0, device: str = "cuda") -> None:
         if not WEIGHTS.is_file():
-            raise PipelineError(f"RIFE-Gewichte fehlen: {WEIGHTS}")
+            raise PipelineError(f"RIFE-Gewichte fehlen: {WEIGHTS} (Download siehe README, Abschnitt \"Modellgewichte\")")
         self.device, self.w, self.h = device, width, height
         mod = max(64, int(64 / flow_scale))
         self.pw, self.ph = math.ceil(width / mod) * mod, math.ceil(height / mod) * mod

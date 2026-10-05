@@ -12,7 +12,18 @@ ROOT = Path(__file__).resolve().parent
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Gameplay -> Kamera-Look Pipeline (lokal, GPU).")
+    ap = argparse.ArgumentParser(
+        description="Gameplay -> Kamera-Look Pipeline (lokal, GPU). Verschiebt die Bildanmutung, erzeugt keinen Fotorealismus.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Beispiele:
+  python enhance.py clip.mp4 -p export-lite,cinematic          2160p60, Lanczos, Kamera-Look (Basis zuerst, Look zuletzt)
+  python enhance.py clip.mp4 -p export,dashcam-real            mit KI-Restaurierung (Schrift/Kennzeichen)
+  python enhance.py clip.mp4 -p export1440,subtle,av1          1440p60, AV1 statt HEVC
+  python enhance.py clip.mp4 -p draft,cinematic --start 40 --duration 10      kurzer Test
+  python enhance.py clip.mp4 -p export-lite --set encode.bitrate=60M --set motion.samples=6
+Basis-Presets: passthrough, export, export-lite, export1440, draft | Looks: subtle, cinematic, dashcam-real | Encoder: hevc, av1
+Alle Presets und Werte: presets.yaml (eigene Datei mit --config). Abgebrochene Laeufe: gleichen Aufruf wiederholen (Resume).
+Ergebnis: output/<name>.mp4 und output/<name>_compare/ (Vergleichsvideo + 5 Standbilder, abschaltbar mit --no-compare).""")
     ap.add_argument("input", type=Path)
     ap.add_argument("-p", "--preset", default="passthrough",
                     help="Preset oder kommagetrennte Kombination, z.B. export,dashcam-real")

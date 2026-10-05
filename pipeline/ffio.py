@@ -55,6 +55,7 @@ class VideoInfo:
     pix_fmt: str
     color_transfer: str | None
     color_range: str | None = None
+    vfr: bool = False   # variable frame rate: the reader resamples to constant frame rate
 
     @property
     def is_hdr(self) -> bool:
@@ -82,8 +83,15 @@ def probe(ffprobe: str, path: Path) -> VideoInfo:
         raise PipelineError(f"Keine gueltige FPS/Dauer in {path} ({e})") from e
     if fps <= 0 or duration <= 0:
         raise PipelineError(f"Keine gueltige FPS/Dauer in {path}")
+    try:
+        peak = Fraction(video.get("r_frame_rate") or fps)
+    except (ValueError, ZeroDivisionError):
+        peak = fps
+    vfr = abs(float(peak) - float(fps)) > 0.005 * float(fps)
+    if vfr:
+        fps = peak   # resample to the peak rate: no frames are dropped, gaps are filled by repeating frames
     nb = video.get("nb_frames")
-    frames = int(nb) if nb and nb.isdigit() else round(duration * float(fps))
+    frames = int(nb) if nb and nb.isdigit() and not vfr else round(duration * float(fps))
     return VideoInfo(
         path=path,
         width=int(video["width"]),
@@ -95,6 +103,7 @@ def probe(ffprobe: str, path: Path) -> VideoInfo:
         pix_fmt=video.get("pix_fmt", ""),
         color_transfer=video.get("color_transfer"),
         color_range=video.get("color_range"),
+        vfr=vfr,
     )
 
 
@@ -146,7 +155,9 @@ class FrameReader:
     def __init__(self, ffmpeg: str, info: VideoInfo, start_frame: int, n_frames: int,
                  pre_vf: list[str] | None = None) -> None:
         self.ffmpeg, self.info, self.start_frame, self.n_frames = ffmpeg, info, start_frame, n_frames
-        self.pre_vf = pre_vf or []
+        # VFR sources are first resampled to constant frame rate (fps filter, frames duplicated/dropped by timestamp)
+        cfr = [f"fps={info.fps.numerator}/{info.fps.denominator}"] if info.vfr else []
+        self.pre_vf = cfr + (pre_vf or [])
 
     def frames(self) -> Iterator[np.ndarray]:
         w, h = self.info.width, self.info.height
