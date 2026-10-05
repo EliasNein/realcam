@@ -91,8 +91,28 @@ Die LUTs (`luts/*.cube`) liegen im Repository; fehlende Standard-LUTs erzeugt `p
 .\.venv\Scripts\python enhance.py "C:\Pfad\clip.mp4" -p export-lite,cinematic --set encode.bitrate=60M --set look.grain.strength=4
 ```
 
-`python enhance.py -h` zeigt alle Optionen. Ergebnis: `output/<name>.mp4` und `output/<name>_compare/` (`compare.mp4` + `still_1..5.png`,
-abschaltbar mit `--no-compare`). Abbrechen mit Strg+C; derselbe Aufruf setzt fort.
+`python enhance.py -h` zeigt alle Optionen. Ergebnis: `output/<name>_<preset>.mp4` und `output/<name>_<preset>_compare/` (`compare.mp4` + `still_1..5.png`,
+abschaltbar mit `--no-compare`). Abbrechen mit Strg+C; derselbe Aufruf setzt fort. Ist die Ausgabe schon fertig, wird die Datei übersprungen
+(`--overwrite` schreibt sie neu und verwendet dabei fertige Segmente aus `work/`; für ein komplett neues Rendern den passenden Ordner in `work/` löschen).
+
+## Stapelmodus
+
+Mehrere Dateien oder ein ganzer Ordner laufen nacheinander mit demselben Preset:
+
+```powershell
+# alle Videos eines Ordners (mp4, mkv, mov, m4v, webm, avi; nicht rekursiv)
+.\.venv\Scripts\python enhance.py -p export-lite,cinematic --input-dir clips\ --output-dir out\
+
+# oder einzelne Dateien
+.\.venv\Scripts\python enhance.py a.mp4 b.mp4 -p export-lite,cinematic --output-dir out\
+```
+
+* Ein Fehler bei einer Datei (defekt, Encoder-Absturz, unerwarteter Fehler) bricht den Rest **nicht** ab; er wird protokolliert und der Stapel läuft weiter.
+* Am Ende steht eine Zusammenfassung mit Datei, Dauer des verarbeiteten Videos, benötigter Zeit und Ergebnis (`ok`, `uebersprungen`, `FEHLER`, `nicht verarbeitet`).
+  Exit-Code 1, wenn mindestens eine Datei fehlschlug; bei Strg+C Exit-Code 130 und die restlichen Dateien stehen als `nicht verarbeitet` in der Zusammenfassung.
+* Bereits fertige Ausgaben werden übersprungen (`--overwrite` erzwingt das Neuschreiben). Eine unterbrochene Datei setzt beim nächsten Aufruf über ihre Segmente fort.
+* Ausgabenamen: `<name>_<preset>.mp4` im Ausgabeordner. Gleiche Dateinamen aus verschiedenen Ordnern werden vor dem Start abgelehnt; `-o` gilt nur für eine einzelne Datei.
+* Liegen Ausgabe- und Eingabeordner gleich, werden die Ergebnisse nicht erneut als Eingabe gelesen. `--start`/`--duration` gelten für alle Dateien.
 
 ## Presets
 
@@ -133,7 +153,7 @@ eingestellt. Gröberes Korn (`look.grain.size`, Standard 2,0 px bei 1080p) über
 
 ### Reproduzierbarkeit und Resume
 
-Zwei Läufe mit gleicher Konfiguration liefern byteidentische Dateien (geprüft mit `export-lite,cinematic`); das Korn-Muster ist pro Segment fest, aber von Segment zu Segment verschieden.
+Zwei Läufe mit gleicher Konfiguration liefern byteidentische Dateien (geprüft mit `export-lite,cinematic` über ein komplettes 20-s-Segment, 1200 Frames bei 2160p); das Korn-Muster ist pro Segment fest, aber von Segment zu Segment verschieden.
 Resume: Ein abgebrochener Lauf (hart beendet mitten in Segment 4 von 6) setzt mit dem gleichen Aufruf fort, die fertigen Segmente bleiben unverändert (MD5 geprüft), nur das angebrochene Segment wird neu gerechnet.
 Die Arbeitsordner (`work/<name>_<preset>_<hash>`) enthalten die Segmente; sie dürfen nach dem Lauf gelöscht werden.
 
