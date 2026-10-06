@@ -153,6 +153,12 @@ on body edges, rims, logos and lettering (measured with `tools/bench_sharpen.py`
 `micro.limit 22`) shows fine rims at tail lights and logos and is not used. The luma stage alone runs at about 18 fps at 2160p on the CPU.
 Sharpening makes existing detail crisper (about 1.3-1.4x edge strength); it cannot add detail that the game footage does not contain.
 
+Optional `look.sharpen.motion_adaptive` (`--set look.sharpen.motion_adaptive.amount=1.0`, off by default; `lo`/`hi` in 8-bit levels,
+defaults 9/20): the sharpening mask is also reduced where the picture changes from one frame to the next. Sharpening motion-blurred
+foliage otherwise amplifies the encoder's block structure into a comb or streak pattern (and flicker); static edges (logos, instruments,
+lettering) keep most of their sharpening, edges that move in the frame are attenuated too. `showroom` sets `motion.samples: 4`
+(effective when the base preset enables the motion blur; 2 samples show double contours on fast motion).
+
 ### HEVC or AV1?
 
 | | HEVC (`hevc_nvenc`) | AV1 (`av1_nvenc`) |
@@ -239,4 +245,7 @@ When redistributing weights or results, check the original licences of the respe
 * `tools/bench_sharpen.py`: sharpening levels on stills: edge gain, overshoot (halos), noise gain in shadows, crops per level.
 * `tools/bench_tone.py`: tone and colour looks on stills: clipping, crushed shadows and hue shift against the untouched still.
 * `tools/measure_flicker.py`: temporal stability of a look at edges (two renders of the same clip, or `--preset` on the decoded clip).
+* `tools/measure_halos_noise.py`: halos (overshoot at edges) and noise gain in dark areas of a look after the encoder (base render against look render).
+* `tools/measure_region_edges.py`: edge strength per image region of several renders against a base (does a variant keep static edges sharp?).
+* `tools/crop_sheet.py`: labelled side-by-side crops of the same frame from several videos (100 % pixels, optional nearest-neighbour zoom).
 * Git: model weights, videos, test images and work folders are in `.gitignore`.

@@ -113,6 +113,9 @@ def _sharpen_y(g: _Graph, tag: str, y: str, w: int, h: int, cfg: dict) -> str:
     small radius and a hard cap on the added detail (`limit`, 8-bit levels) so edges cannot overshoot into halos.
     The result is blended in through a mask that is 1 on structure (edges, lettering, wheel spokes) and 0 on smooth
     areas (sky, paint, dark noisy shadows): edge strength of the lightly blurred luma times a shadow gate on luma.
+    With `motion_adaptive.amount` > 0 the mask is also reduced where the picture changes from one frame to the next
+    (blurred |frame - previous frame|, smoothstep between `lo` and `hi` 8-bit levels): sharpening motion-blurred
+    foliage would amplify encoder block structure there, static edges (logos, instruments) keep the full effect.
     Radii are relative to the image height. The smooth mask is computed at half resolution (speed)."""
     cas = float(cfg.get("cas", 0.0))
     mic = cfg.get("micro") or {}
@@ -121,6 +124,8 @@ def _sharpen_y(g: _Graph, tag: str, y: str, w: int, h: int, cfg: dict) -> str:
     sigma = max(float(mic.get("sigma", 0.0005)) * h, 0.4)
     e_lo, e_hi = float(m.get("edge_lo", 5.0)) * 257, float(m.get("edge_hi", 20.0)) * 257
     l_lo, l_hi = float(m.get("luma_lo", 0.04)), float(m.get("luma_hi", 0.16))
+    ma = cfg.get("motion_adaptive") or {}
+    ma_amt = float(ma.get("amount", 0.0))
     pre = max(float(m.get("edge_sigma", 0.0006)) * h / 2, 0.4)     # blur before the gradient: noise is not structure
     spread = max(float(m.get("spread", 0.0008)) * h / 2, 0.4)      # mask must also cover the overshoot lobes next to an edge
     L = lambda x: f"{tag}{x}"                                    # noqa: E731
@@ -132,11 +137,21 @@ def _sharpen_y(g: _Graph, tag: str, y: str, w: int, h: int, cfg: dict) -> str:
     if k > 0:
         sharp = _unsharp(g, L("u"), sharp, w, h, sigma, k, lim)
     hw, hh = _even(w / 2), _even(h / 2)
-    g.raw(f"[{L('c')}]scale={hw}:{hh}:flags=area,split[{L('e0')}][{L('g0')}]")
+    g.raw(f"[{L('c')}]scale={hw}:{hh}:flags=area,split={3 if ma_amt > 0 else 2}[{L('e0')}][{L('g0')}]" + (f"[{L('m0')}]" if ma_amt > 0 else ""))
     g.raw(f"[{L('e0')}]gblur=sigma={pre:.3f}:steps=2,sobel=scale=0.25,"
           f"lut=y='{MAXV}*{_smooth('val', e_lo, e_hi)}',gblur=sigma={spread:.3f}:steps=2[{L('e')}]")
     g.raw(f"[{L('g0')}]lut=y='{MAXV}*{_smooth(f'val/{MAXV}', l_lo, l_hi)}'[{L('g')}]")
-    g.raw(f"[{L('e')}][{L('g')}]blend=all_mode=multiply,scale={w}:{h}:flags=bilinear[{L('m')}]")
+    mask = f"[{L('e')}][{L('g')}]blend=all_mode=multiply"
+    if ma_amt > 0:
+        lo, hi = float(ma.get("lo", 4.0)) * 257, float(ma.get("hi", 16.0)) * 257
+        msig = max(float(ma.get("sigma", 0.004)) * h / 2, 0.4)
+        g.raw(f"[{L('m0')}]split[{L('m1')}][{L('m2')}]")
+        g.raw(f"[{L('m2')}]tpad=start=1:start_mode=clone[{L('m3')}]")       # previous frame; the first frame is compared with itself
+        g.raw(f"[{L('m1')}][{L('m3')}]blend=all_mode=difference:shortest=1,gblur=sigma={msig:.3f}:steps=2,"
+              f"lut=y='{MAXV}*(1-{min(ma_amt, 1.0):.4f}*{_smooth('val', lo, hi)})'[{L('mf')}]")
+        g.raw(f"{mask}[{L('mm')}]")
+        mask = f"[{L('mm')}][{L('mf')}]blend=all_mode=multiply"
+    g.raw(f"{mask},scale={w}:{h}:flags=bilinear[{L('m')}]")
     g.raw(f"[{L('a')}][{sharp}][{L('m')}]maskedmerge[{L('o')}]")
     return L("o")
 

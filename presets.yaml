@@ -55,6 +55,7 @@ defaults:
       cas: 0.0            # (a) kantenadaptive Schaerfung (FFmpeg cas), 0..1
       micro: {amount: 0.0, sigma: 0.0005, limit: 10}   # (b) Unsharp mit kleinem Radius (sigma rel. zur Bildhoehe); limit = max. Zusatz in 8-Bit-Stufen (verhindert Halos)
       mask: {edge_lo: 5.0, edge_hi: 20.0, luma_lo: 0.04, luma_hi: 0.16}   # Kantenstaerke (8-Bit-Stufen) und Schattentor (Luma 0..1), jeweils Smoothstep
+      motion_adaptive: {amount: 0.0, lo: 9.0, hi: 20.0, sigma: 0.004}   # Maske zusaetzlich nach |Frame - Vorbild| abschwaechen (amount 0..1 = max. Abschwaechung; lo/hi in 8-Bit-Stufen): keine Schaerfung auf bewegungsunscharfem Laub
 
 presets:
   # --- Basis-Presets (Aufloesung, Restaurierung, Motion-Blur, Encoder) ---
@@ -130,6 +131,7 @@ presets:
       tone: {black: 0.01, contrast: 0.25, gamma: 1.10, vibrance: 0.15}
       clarity: {amount: 0.15}
       sharpen: {level: strong}   # Standard; schwaecher per --set look.sharpen.level=medium (oder mild)
+    motion: {samples: 4}  # Standard fuer Motion-Blur mit Look (wirkt, sobald ein Basis-Preset motion aktiviert; 2 zeigt Doppelkonturen)
 
   hevc:                 # als letztes Preset: HEVC erzwingen
     encode: {codec: hevc_nvenc}
