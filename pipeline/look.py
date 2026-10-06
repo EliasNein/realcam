@@ -3,7 +3,7 @@
 All strengths are relative to the image (height / width / diagonal), so a look renders the same in
 1440p and 2160p. Processing is done in 16-bit planar RGB to avoid banding.
 Glow is added as light (FFmpeg's blend=screen is broken for 16-bit RGB).
-Order: softness -> chromatic aberration -> bloom -> halation -> vignette -> LUT -> grain.
+Order: softness -> chromatic aberration -> bloom -> halation -> vignette -> LUT -> sharpen -> grain.
 """
 from __future__ import annotations
 
@@ -59,6 +59,58 @@ def _glow(g: _Graph, w: int, h: int, threshold: float, sigma_rel: float, strengt
     g.raw(f"[{base}b]{luma},lutrgb={ex},scale={_even(w / f)}:{_even(h / f)}:flags=area,gblur=sigma={sigma:.3f}:steps=2,"
           f"scale={w}:{h}:flags=bicubic{tint_f}[{glow}]")
     g.raw(f"[{base}a][{glow}]blend=all_mode=addition:all_opacity={strength:.4f}:shortest=1[{out}]")
+    g.cur = out
+
+
+def _sharpen(g: _Graph, w: int, h: int, cfg: dict) -> None:
+    """Two-stage luma sharpening: (a) contrast-adaptive sharpen (FFmpeg cas), (b) micro contrast = unsharp mask with a
+    small radius and a hard cap on the added detail (`limit`, 8-bit levels) so edges cannot overshoot into halos.
+    The result is blended in through a mask that is 1 on structure (edges, lettering, wheel spokes) and 0 on smooth
+    areas (sky, paint, dark noisy shadows): edge strength of the lightly blurred luma times a shadow gate on luma.
+    Chroma is untouched. Radii are relative to the image height.
+    Speed: only the luma plane is processed (gray16), blend modes and 1-D LUTs replace blend expressions (~10x faster),
+    and the smooth mask is computed at half resolution."""
+    cas = float(cfg.get("cas", 0.0))
+    mic = cfg.get("micro") or {}
+    k, lim = float(mic.get("amount", 0.0)), float(mic.get("limit", 10.0)) * 257
+    if cas <= 0 and k <= 0:
+        return
+    m = cfg.get("mask") or {}
+    sigma = max(float(mic.get("sigma", 0.0005)) * h, 0.4)
+    e_lo, e_hi = float(m.get("edge_lo", 5.0)) * 257, float(m.get("edge_hi", 20.0)) * 257
+    l_lo, l_hi = float(m.get("luma_lo", 0.04)), float(m.get("luma_hi", 0.16))
+    pre = max(float(m.get("edge_sigma", 0.0006)) * h / 2, 0.4)     # blur before the gradient: noise is not structure
+    spread = max(float(m.get("spread", 0.0008)) * h / 2, 0.4)      # mask must also cover the overshoot lobes next to an edge
+    t = lambda v, a, b: f"clip(({v}-{a})/({b}-{a}),0,1)"        # noqa: E731
+    sm = lambda v, a, b: f"({t(v, a, b)}*{t(v, a, b)}*(3-2*{t(v, a, b)}))"   # noqa: E731
+    n = g.n + 1
+    L = lambda x: f"sh{n}{x}"                                    # noqa: E731
+    to_yuv = "scale=out_color_matrix=bt709:out_range=pc:flags=accurate_rnd+full_chroma_int,format=yuv444p16le"
+    g.raw(f"[{g.cur}]{to_yuv},extractplanes=y+u+v[{L('y')}][{L('u')}][{L('v')}]")
+    g.raw(f"[{L('y')}]split=3[{L('a')}][{L('b')}][{L('c')}]")
+    cur = L("b")
+    if cas > 0:
+        g.raw(f"[{cur}]cas=strength={cas:.4f}[{L('cas')}]")
+        cur = L("cas")
+    if k > 0:
+        mid = (MAXV + 1) // 2
+        g.raw(f"[{cur}]split=3[{L('c1')}][{L('c2')}][{L('c3')}]")
+        g.raw(f"[{L('c2')}]gblur=sigma={sigma:.3f}:steps=2[{L('bl')}]")
+        g.raw(f"[{L('c1')}][{L('bl')}]blend=all_mode=grainextract,"                     # A - B + mid = detail
+              f"lut=y='{mid}+clip((val-{mid})*{k:.4f},-{lim:.0f},{lim:.0f})'[{L('d')}]")   # amplify, cap the overshoot
+        g.raw(f"[{L('c3')}][{L('d')}]blend=all_mode=grainmerge[{L('s')}]")                # A + B - mid
+    else:
+        g.raw(f"[{cur}]null[{L('s')}]")
+    hw, hh = _even(w / 2), _even(h / 2)
+    g.raw(f"[{L('c')}]scale={hw}:{hh}:flags=area,split[{L('e0')}][{L('g0')}]")
+    g.raw(f"[{L('e0')}]gblur=sigma={pre:.3f}:steps=2,sobel=scale=0.25,"
+          f"lut=y='{MAXV}*{sm('val', e_lo, e_hi)}',gblur=sigma={spread:.3f}:steps=2[{L('e')}]")
+    g.raw(f"[{L('g0')}]lut=y='{MAXV}*{sm(f'val/{MAXV}', l_lo, l_hi)}'[{L('g')}]")
+    g.raw(f"[{L('e')}][{L('g')}]blend=all_mode=multiply,scale={w}:{h}:flags=bilinear[{L('m')}]")
+    g.raw(f"[{L('a')}][{L('s')}][{L('m')}]maskedmerge[{L('o')}]")
+    out = g.label()
+    g.raw(f"[{L('o')}][{L('u')}][{L('v')}]mergeplanes=0x001020:yuv444p16le,"
+          f"scale=in_color_matrix=bt709:in_range=pc:flags=accurate_rnd+full_chroma_int,format=gbrp16le[{out}]")
     g.cur = out
 
 
@@ -134,6 +186,9 @@ def build_graph(look: dict, w: int, h: int, fps: Fraction) -> tuple[str, list[Pa
             g.raw(f"[{base}b]lut3d=file={path.name}:interp=tetrahedral[{graded}]")
             g.raw(f"[{graded}][{base}a]blend=all_mode=normal:all_opacity={strength:.4f}:shortest=1[{out}]")
             g.cur = out
+
+    if look.get("sharpen"):
+        _sharpen(g, w, h, look["sharpen"])
 
     grain = look.get("grain") or {}
     if grain.get("strength", 0) > 0:
