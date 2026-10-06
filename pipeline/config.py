@@ -44,8 +44,20 @@ def load(path: Path, preset: str, overrides: list[str]) -> dict:
         if not sep:
             raise PipelineError(f"--set erwartet key=wert, bekam '{item}'")
         _set_path(cfg, key.strip(), yaml.safe_load(val))
+    _resolve_sharpen_level(cfg)
     _validate(cfg)
     return cfg
+
+
+def _resolve_sharpen_level(cfg: dict) -> None:
+    shp = (cfg.get("look") or {}).get("sharpen")
+    level = shp.get("level") if shp else None
+    if level is None:
+        return
+    levels = shp.get("levels") or {}
+    if level not in levels:
+        raise PipelineError(f"look.sharpen.level '{level}' ungueltig. Erlaubt: {', '.join(levels) or '-'}")
+    shp.update(copy.deepcopy(levels[level]))
 
 
 def _validate(cfg: dict) -> None:

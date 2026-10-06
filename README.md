@@ -148,8 +148,8 @@ Look presets switch the encoder to **HEVC**; `av1` as the last preset selects AV
 and in this order: global tone curve (per channel, black point 0.01, S-curve 0.25, gamma 1.10, highlights fade back to the input so they are
 not lifted into clipping) -> weak large-radius local contrast (`look.clarity`, hidden in highlights and deep shadows) -> two-stage sharpening
 (`look.sharpen`: FFmpeg `cas` plus a small-radius unsharp mask whose added detail is capped, blended in through an edge and shadow mask, so sky,
-smooth paint and dark noisy areas stay untouched) -> FFmpeg `vibrance` 0.15. The sharpening level is "strong": the strongest level without visible halos
-on body edges, rims, logos and lettering (measured with `tools/bench_sharpen.py`). A stronger level ("strong+": `cas 0.9`, `micro.amount 1.8`,
+smooth paint and dark noisy areas stay untouched) -> FFmpeg `vibrance` 0.15. The sharpening level is "strong" by default (`look.sharpen.level`): the strongest level without visible halos
+on body edges, rims, logos and lettering (measured with `tools/bench_sharpen.py`). Weaker levels `medium` and `mild` are selected with `--set look.sharpen.level=medium`; the level table is in `presets.yaml` (`look.sharpen.levels`). A stronger level ("strong+": `cas 0.9`, `micro.amount 1.8`,
 `micro.limit 22`) shows fine rims at tail lights and logos and is not used. The luma stage alone runs at about 18 fps at 2160p on the CPU.
 Sharpening makes existing detail crisper (about 1.3-1.4x edge strength); it cannot add detail that the game footage does not contain.
 
