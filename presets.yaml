@@ -38,6 +38,14 @@ defaults:
     halation: {strength: 0.0, threshold: 0.85, sigma: 0.03, color: [1.0, 0.40, 0.15]}
     vignette: {strength: 0.0}                                   # Eckenabdunklung 0..1 (cos^4-Abfall)
     grain: {strength: 0.0, size: 2.0, highlight_falloff: 0.7}   # strength = Standardabweichung in 8-Bit-Stufen; size in px bei 1080p
+    tone:                 # globale Tonkurve pro Kanal (bildet Weiss auf Weiss ab, kann nichts ausbrennen) und Farbe
+      black: 0.0          # Schwarzpunkt 0..0.05 (hoeher = tiefere Schwarzwerte, zu viel saeuft Schatten ab)
+      contrast: 0.0       # S-Kurve 0..1 (Mischung mit smoothstep)
+      gamma: 1.0          # Mitten heller (>1)
+      highlight_protect: [0.8, 0.95]   # Luma-Bereich, in dem die Kurve zur Identitaet ueberblendet (keine Anhebung der Lichter)
+      chroma: 1.0         # einheitlicher Chroma-Gewinn (hueerhaltend, schneidet aber helle Farben an: besser bei 1.0 lassen)
+      vibrance: 0.0       # FFmpeg-vibrance 0..2: hebt vor allem schwach gesaettigte Farben
+    clarity: {amount: 0.0, sigma: 0.03, limit: 8, hi_lo: 0.5, hi_hi: 0.8}   # Klarheit: lokaler Kontrast mit grossem Radius (sigma rel. zur Bildhoehe), in Lichtern und tiefen Schatten ausgeblendet
     sharpen:              # Luma-Schaerfung nach dem Upscale, nur auf Struktur (Kantenmaske) und nicht in dunklen Flaechen
       cas: 0.0            # (a) kantenadaptive Schaerfung (FFmpeg cas), 0..1
       micro: {amount: 0.0, sigma: 0.0005, limit: 10}   # (b) Unsharp mit kleinem Radius (sigma rel. zur Bildhoehe); limit = max. Zusatz in 8-Bit-Stufen (verhindert Halos)
@@ -114,8 +122,10 @@ presets:
     encode: {codec: hevc_nvenc}
     look:
       enabled: true
+      tone: {black: 0.01, contrast: 0.25, gamma: 1.10, vibrance: 0.15}
+      clarity: {amount: 0.15}
       sharpen:            # Stufe "strong" aus tools/bench_sharpen.py: staerkste Stufe ohne sichtbare Halos
-        cas: 0.8
+        cas: 0.8          # vorgemerkt, nicht aktiv: "strong+" = cas 0.9, micro.amount 1.8, micro.limit 22 (feine Saeume an Lichtern/Logos)
         micro: {amount: 1.4, limit: 16}
 
   hevc:                 # als letztes Preset: HEVC erzwingen
