@@ -137,9 +137,21 @@ so it only slows down `draft`. Real times vary by about ±10 % depending on sour
 | `subtle` | light grading, hardly any lens effects | 2.3 | `subtle` |
 | `cinematic` | full camera look, warmer tone, moderate grain | 3.5 | `cinematic` |
 | `dashcam-real` | flat, desaturated, lifted blacks, strong grain | 5.6 | `dashcam` |
+| `showroom` | sharp and punchy, no grain, vignette, CA or blur (see below) | none | none |
 
 Look presets switch the encoder to **HEVC**; `av1` as the last preset selects AV1, `hevc` forces HEVC.
 (`export-lite` alone, without a look, uses AV1.)
+
+### The `showroom` look
+
+`showroom` combines with `export`, `export-lite`, `export1440` and `draft` (`-p export-lite,showroom`). It works on luma only
+and in this order: global tone curve (per channel, black point 0.01, S-curve 0.25, gamma 1.10, highlights fade back to the input so they are
+not lifted into clipping) -> weak large-radius local contrast (`look.clarity`, hidden in highlights and deep shadows) -> two-stage sharpening
+(`look.sharpen`: FFmpeg `cas` plus a small-radius unsharp mask whose added detail is capped, blended in through an edge and shadow mask, so sky,
+smooth paint and dark noisy areas stay untouched) -> FFmpeg `vibrance` 0.15. The sharpening level is "strong": the strongest level without visible halos
+on body edges, rims, logos and lettering (measured with `tools/bench_sharpen.py`). A stronger level ("strong+": `cas 0.9`, `micro.amount 1.8`,
+`micro.limit 22`) shows fine rims at tail lights and logos and is not used. The luma stage alone runs at about 18 fps at 2160p on the CPU.
+Sharpening makes existing detail crisper (about 1.3-1.4x edge strength); it cannot add detail that the game footage does not contain.
 
 ### HEVC or AV1?
 
@@ -167,7 +179,7 @@ Override single values with `--set section.key=value`. Important sections:
 * `segment_seconds`, `segment_overlap_seconds` (context for the motion blur; 4 frames are enough for seamless transitions)
 * `restore`: `model` (`none`, `lanczos`, `general-x4v3`), `denoise`, `tile`, `target_height`, `classic.deblock/deband`
 * `motion`: `out_fps`, `samples` (sub-frames per output frame), `shutter_angle`, `blend_gamma`, `flow_scale`
-* `look`: `lut`, `softness`, `ca`, `bloom`, `halation`, `vignette`, `grain` (all strengths are relative to the image size, so 1440p and 2160p look the same)
+* `look`: `lut`, `softness`, `ca`, `bloom`, `halation`, `vignette`, `grain`, `tone`, `clarity`, `sharpen` (all strengths are relative to the image size, so 1440p and 2160p look the same)
 * `encode`: `codec`, `bitrate`, `crf`/CQ, `preset`, `pix_fmt`
 
 **Your own LUTs:** put a `.cube` file (any size, 3D) into `luts/` and set `look.lut: name`; existing files are never overwritten.
@@ -223,4 +235,8 @@ When redistributing weights or results, check the original licences of the respe
 
 * `tools/bench_restore.py`: speed and VRAM of the restoration paths on real frames.
 * `tools/look_still.py`: apply the look to a still image (for tuning single effects).
+* `tools/measure_look.py`: tone, saturation, local contrast, edge strength and clipping shares of an image region (e.g. against a reference).
+* `tools/bench_sharpen.py`: sharpening levels on stills: edge gain, overshoot (halos), noise gain in shadows, crops per level.
+* `tools/bench_tone.py`: tone and colour looks on stills: clipping, crushed shadows and hue shift against the untouched still.
+* `tools/measure_flicker.py`: temporal stability of a look at edges (two renders of the same clip, or `--preset` on the decoded clip).
 * Git: model weights, videos, test images and work folders are in `.gitignore`.
