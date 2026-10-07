@@ -97,6 +97,20 @@ The LUTs (`luts/*.cube`) are part of the repository; missing default LUTs are re
 can be disabled with `--no-compare`). Abort with Ctrl+C; the same command resumes. If the output is already finished, the file is skipped
 (`--overwrite` rewrites it and reuses finished segments from `work/`; to re-render completely, delete the matching folder in `work/`).
 
+## GUI (work in progress)
+
+The GUI lives in `gui/` and is optional; the CLI does not need it. It only starts `enhance.py` as a separate process and never imports `torch`.
+Milestone 1 is finished: window with drag and drop and folder selection, video facts via ffprobe, warnings for the source, and a system check
+(FFmpeg, model weights in `models/`, CUDA/VRAM, free disk space). Rendering is not wired up yet. The texts are German and live in `gui/strings.py`.
+
+```powershell
+.\.venv\Scripts\python -m pip install -r requirements-gui.txt   # PySide6, pytest, pytest-qt (pinned)
+.\.venv\Scripts\python -m gui                                     # start the window
+.\.venv\Scripts\python -m pytest                                  # tests (the one test marked gpu needs a free GPU)
+```
+
+The thresholds of the source warnings (`UNTESTED_BELOW_HEIGHT`, `LOW_BITRATE_MBIT`, ...) are constants in `gui/constants.py`; they mark what was tested, not a quality limit.
+
 ## Batch mode
 
 Several files or a whole folder are processed one after another with the same preset:

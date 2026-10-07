@@ -49,5 +49,11 @@ def test_every_key_used_in_code_exists():
     assert not missing
 
 
+def test_no_unused_keys():
+    used = _constants()
+    unused = [k for k in strings.STRINGS["de"] if k not in used]
+    assert not unused
+
+
 def test_t_fills_placeholders():
     assert "5" in strings.t("preflight.vram.low", vram="3", recommended=5)

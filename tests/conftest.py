@@ -1,8 +1,11 @@
+import os
 import subprocess
 
 import pytest
 
 from pipeline.ffio import find_tool
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 @pytest.fixture(scope="session")
