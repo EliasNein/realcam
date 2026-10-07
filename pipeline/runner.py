@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Iterable, Iterator
 
+from . import events
 from . import stages as stages_mod
 from .ffio import FrameReader, FrameWriter, PipelineError, VideoInfo
 from .log import Progress, Stat, Timings, log
@@ -77,6 +78,8 @@ def run(ffmpeg: str, info: VideoInfo, cfg: dict, out_path: Path, preset: str,
     for asset in chain.assets:   # filter graph references these by bare name relative to the encoder's cwd
         shutil.copy2(asset, work / Path(asset).name)
     progress = Progress(total_out, len(segs))
+    events.emit("job", key=work.name, work=str(work), segments=len(segs), out_frames=total_out, out_width=chain.out_size[0],
+                out_height=chain.out_size[1], out_fps=float(chain.out_fps), src_frames=count, out=str(out_path))
     timings = Timings()
     log.info("%dx%d @ %.3f fps -> %dx%d @ %.3f fps, %d Frames ab Frame %d -> %d Segment(e), Arbeitsordner %s",
              info.width, info.height, fps, *chain.out_size, float(chain.out_fps), count, first, len(segs), work)
@@ -91,13 +94,17 @@ def run(ffmpeg: str, info: VideoInfo, cfg: dict, out_path: Path, preset: str,
             n = json.loads(marker.read_text())["frames"]
             log.info("Segment %d/%d fertig (uebersprungen, %d Frames)", idx + 1, len(segs), n)
             progress.skip(n)
+            events.emit("segment_done", segment=idx + 1, segments=len(segs), frames=n, skipped=True)
             continue
         part = work / f"seg_{idx:04d}.part.mp4"
         pre = (min(overlap, a) // d) * d if overlap else 0
+        events.emit("segment_start", segment=idx + 1, segments=len(segs), frames=math.ceil((b - a) / d))
         n = _process_segment(ffmpeg, info, chain, cfg, a, b, pre, overlap, part, work, progress, timings, idx)
         os.replace(part, final)
         marker.write_text(json.dumps({"frames": n}))
+        events.emit("segment_done", segment=idx + 1, segments=len(segs), frames=n, skipped=False)
 
+    events.emit("concat", parts=len(parts))
     _concat(ffmpeg, info, parts, work, out_path, first, count)
     timings.report()
     log.info("Fertig: %s", out_path)

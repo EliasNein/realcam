@@ -4,6 +4,8 @@ import logging
 import time
 from dataclasses import dataclass
 
+from . import events
+
 log = logging.getLogger("enhance")
 
 
@@ -66,11 +68,14 @@ class Progress:
         self.t0: float | None = None   # starts with the first frame, so model loading/warm-up is not counted
         self._base = 0
         self._last = time.perf_counter()
+        self._last_event = 0.0
+        self.skipped = 0
         self.segment = 0
 
     def skip(self, frames: int) -> None:
         """Frames of already finished segments: counted, but excluded from the rate."""
         self.total -= frames
+        self.skipped += frames
 
     def update(self, n: int = 1) -> None:
         self.done += n
@@ -78,11 +83,15 @@ class Progress:
         if self.t0 is None:
             self.t0, self._base = now, self.done
             return
+        rate = (self.done - self._base) / max(now - self.t0, 1e-6)
+        eta = (self.total - self.done) / rate if rate > 0 else 0
+        if events.enabled() and now - self._last_event >= 1.0:
+            self._last_event = now
+            events.emit("progress", segment=self.segment, segments=self.segments_total, done=self.done, total=self.total,
+                        skipped_frames=self.skipped, rate=round(rate, 2), eta=round(eta, 1))
         if now - self._last < self.interval:
             return
         self._last = now
-        rate = (self.done - self._base) / max(now - self.t0, 1e-6)
-        eta = (self.total - self.done) / rate if rate > 0 else 0
         log.info(
             "Segment %d/%d | %d/%d Frames | %.1f fps | Rest ~%s",
             self.segment, self.segments_total, self.done, self.total, rate, fmt_time(eta),

@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from pipeline import compare, config, runner
+from pipeline import compare, config, events, runner
 from pipeline.ffio import PipelineError, find_tool, probe
 from pipeline.log import fmt_time, log, setup_logging
 
@@ -79,6 +79,7 @@ def process_file(args, cfg: dict, ffmpeg: str, ffprobe: str, src: Path, out: Pat
         if count < 1:
             raise PipelineError("Keine Frames im gewaehlten Bereich")
         res.video_seconds = count / fps
+        events.emit("file_start", name=src.name, src=str(src), out=str(out))
         if out.resolve() == src.resolve():
             raise PipelineError("Ausgabe darf nicht die Eingabedatei sein")
         runner.run(ffmpeg, info, cfg, out, args.preset, first, count, args.work_dir)
@@ -91,13 +92,19 @@ def process_file(args, cfg: dict, ffmpeg: str, ffprobe: str, src: Path, out: Pat
     except PipelineError as e:
         res.status, res.note = "failed", str(e).replace(str(src), src.name)
         log.error("%s", e)
+        events.emit("error", name=src.name, message=res.note)
+    except KeyboardInterrupt:
+        res.status = "not processed"
+        raise
     except Exception as e:   # one broken file must never stop a batch
         res.status, res.note = "failed", f"unerwarteter Fehler: {type(e).__name__}: {e}"
         log.error("%s", res.note)
+        events.emit("error", name=src.name, message=res.note)
         if args.verbose:
             log.exception("Details")
     finally:
         res.seconds = time.perf_counter() - t0
+        events.emit("file_done", name=src.name, status=res.status, seconds=round(res.seconds, 1), note=res.note)
         _release_gpu()
     return res
 
@@ -147,6 +154,7 @@ Ergebnis: output/<name>_<preset>.mp4 und <name>_<preset>_compare/ (Vergleichsvid
     ap.add_argument("--set", dest="overrides", action="append", default=[], metavar="KEY=WERT")
     ap.add_argument("--work-dir", type=Path, default=ROOT / "work")
     ap.add_argument("--no-compare", action="store_true", help="keinen Vergleich (Video + 5 Standbilder) erzeugen")
+    ap.add_argument("--progress-json", type=Path, metavar="DATEI", help="Fortschritt als Ereignisse (eine JSON-Zeile je Ereignis) in diese Datei schreiben (fuer die GUI)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     setup_logging(args.verbose)
@@ -160,6 +168,9 @@ Ergebnis: output/<name>_<preset>.mp4 und <name>_<preset>_compare/ (Vergleichsvid
         log.error("%s", e)
         return 1
 
+    if args.progress_json:
+        events.configure(args.progress_json)
+    events.emit("batch", files=[f.name for f in files], preset=args.preset)
     results: list[Result] = []
     try:
         for i, src in enumerate(files, 1):
@@ -168,12 +179,17 @@ Ergebnis: output/<name>_<preset>.mp4 und <name>_<preset>_compare/ (Vergleichsvid
             results.append(process_file(args, cfg, ffmpeg, ffprobe, src, outputs[src]))
     except KeyboardInterrupt:
         log.warning("Abgebrochen. Fertige Segmente bleiben erhalten; gleicher Aufruf setzt fort.")
+        events.emit("cancelled")
+        events.close()
         results += [Result(s.name, "not processed") for s in files[len(results):]]
         if len(files) > 1:
             print_summary(results)
         return 130
     if len(files) > 1:
         print_summary(results)
+    events.emit("batch_done", ok=sum(r.status == "ok" for r in results), skipped=sum(r.status == "skipped" for r in results),
+                failed=sum(r.status == "failed" for r in results))
+    events.close()
     return 1 if any(r.status == "failed" for r in results) else 0
 
 
