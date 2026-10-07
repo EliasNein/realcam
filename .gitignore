@@ -50,3 +50,5 @@ tmp/
 # Claude Code (persönlich)
 .claude/settings.local.json
 CLAUDE.local.md
+# pytest
+.pytest_cache/
