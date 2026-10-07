@@ -8,13 +8,16 @@ from typing import Callable
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QMainWindow,
-                               QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .. import constants as C
+from ..core import commands, jobs, render
 from ..core import preflight as PF
 from ..core.probe import ProbeError, VideoFacts, collect_videos, format_duration, format_number, probe_video, warnings_for
 from ..strings import number, t
-from .workers import PreflightWorker, ProbeWorker
+from .cards_view import CardsView
+from .render_view import RenderView
+from .workers import BlockerWorker, PreflightWorker, ProbeWorker
 
 CLOSE_WAIT_MS = 5000
 _LEVEL_MARK = {PF.OK: "✓", PF.INFO: "ℹ", PF.WARN: "⚠", PF.ERROR: "✕"}
@@ -67,10 +70,19 @@ class MainWindow(QMainWindow):
     COLUMNS = ("list.col_name", "list.col_size", "list.col_fps", "list.col_duration", "list.col_bitrate", "list.col_notes")
 
     def __init__(self, probe: Callable[[Path], VideoFacts] = _default_probe,
-                 preflight: Callable[[], list[PF.Check]] = _default_preflight, start_preflight: bool = True):
+                 preflight: Callable[[], list[PF.Check]] = _default_preflight, start_preflight: bool = True,
+                 paths: jobs.AppPaths | None = None, argv_builder: Callable | None = None, blockers: Callable | None = None,
+                 keep_awake: Callable[[bool], object] | None = None, confirm: Callable[[str, str], bool] | None = None):
         super().__init__()
         self._probe = probe
         self._preflight = preflight
+        self.paths = paths or jobs.AppPaths()
+        self.store = jobs.JobStore(self.paths.jobs)
+        self._argv_builder = argv_builder or commands.build_argv
+        self._blockers = blockers or (lambda: render.start_blockers(self.paths.lock))
+        self._keep_awake = keep_awake
+        self._request: tuple | None = None
+        self._unfinished: jobs.JobRecord | None = None
         self.videos: list[VideoFacts] = []
         self.static_checks: list[PF.Check] = []
         self._workers: list = []
@@ -79,11 +91,30 @@ class MainWindow(QMainWindow):
         self.resize(940, 720)
         self.setAcceptDrops(True)
 
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
         root = QWidget()
-        self.setCentralWidget(root)
+        self.stack.addWidget(root)
         layout = QVBoxLayout(root)
         layout.setContentsMargins(18, 18, 18, 14)
         layout.setSpacing(12)
+
+        self.banner = QFrame()
+        self.banner.setStyleSheet("QFrame { border: 1px solid #c98a00; border-radius: 6px; }")
+        banner_row = QHBoxLayout(self.banner)
+        self.banner_label = QLabel()
+        self.banner_label.setWordWrap(True)
+        self.banner_label.setTextFormat(Qt.PlainText)
+        self.banner_label.setStyleSheet("border: none;")
+        self.banner_resume = QPushButton(t("banner.resume"))
+        self.banner_discard = QPushButton(t("banner.discard"))
+        banner_row.addWidget(self.banner_label, 1)
+        banner_row.addWidget(self.banner_resume)
+        banner_row.addWidget(self.banner_discard)
+        self.banner_resume.clicked.connect(self.resume_unfinished)
+        self.banner_discard.clicked.connect(self.discard_unfinished)
+        self.banner.setVisible(False)
+        layout.addWidget(self.banner)
 
         self.drop_area = DropArea()
         self.drop_area.choose_files.clicked.connect(self.choose_files)
@@ -129,6 +160,25 @@ class MainWindow(QMainWindow):
         self.preflight_label.setTextFormat(Qt.RichText)
         self.preflight_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.preflight_label)
+
+        foot = QHBoxLayout()
+        foot.addStretch()
+        self.next_button = QPushButton(t("start.next"))
+        self.next_button.setEnabled(False)
+        self.next_button.clicked.connect(self.show_cards)
+        foot.addWidget(self.next_button)
+        layout.addLayout(foot)
+
+        self.cards = CardsView()
+        self.cards.back_requested.connect(self.show_start)
+        self.cards.render_requested.connect(self.request_render)
+        self.stack.addWidget(self.cards)
+        self.render_view = RenderView(self._make_session, confirm=confirm)
+        self.render_view.back_requested.connect(self.show_start)
+        self.stack.addWidget(self.render_view)
+        self._confirm = confirm or self.render_view._ask
+        self.table.itemSelectionChanged.connect(self._update_next)
+        self._check_unfinished()
 
         if start_preflight:
             self.run_preflight()
@@ -230,6 +280,7 @@ class MainWindow(QMainWindow):
         if self.table.currentRow() < 0:
             self.table.selectRow(row)
         self._render_preflight()
+        self._update_next()
 
     def _on_probe_failed(self, path: str, message: str) -> None:
         self._pending.discard(Path(path).resolve())
@@ -262,6 +313,7 @@ class MainWindow(QMainWindow):
         self.static_checks = [c for c in checks if c.id != "disk"]
         self.recheck.setEnabled(True)
         self._render_preflight()
+        self._update_next()
 
     def disk_checks(self) -> list[PF.Check]:
         """The pipeline never deletes work folders, so the need adds up over all loaded videos."""
@@ -273,6 +325,115 @@ class MainWindow(QMainWindow):
 
     def can_render(self) -> bool:
         return bool(self.static_checks) and not PF.has_error(self.all_checks())
+
+    # ---- pages, starting a render ---------------------------------------------------------------
+    def _av1_supported(self) -> bool:
+        return not any(c.id == "av1" for c in self.static_checks)
+
+    def _blocked_reason(self) -> str:
+        errors = [c.text for c in self.all_checks() if c.level == PF.ERROR]
+        return errors[0] if errors else (t("preflight.running") if not self.static_checks else "")
+
+    def _update_next(self) -> None:
+        self.next_button.setEnabled(self.selected_facts() is not None and self.can_render() and not self.render_view.is_active())
+
+    def show_start(self) -> None:
+        self.stack.setCurrentIndex(0)
+        self._check_unfinished()
+
+    def show_cards(self) -> None:
+        facts = self.selected_facts()
+        if facts is None:
+            return
+        self.cards.set_video(facts, self.can_render(), self._blocked_reason())
+        self.stack.setCurrentIndex(1)
+
+    def request_render(self, look, quality: str) -> None:
+        """Card button: first ask (off the GUI thread) whether another run is active, then create the job and start."""
+        facts = self.selected_facts()
+        if facts is None or not self.can_render() or self._request is not None:
+            return
+        self._request = (facts, look, quality)
+        self.cards.set_busy(True)
+        self.cards.show_message(t("render.checking"))
+        worker = BlockerWorker(self._blockers, self)
+        worker.done.connect(self._on_blockers)
+        self._start(worker)
+
+    def _on_blockers(self, blocker) -> None:
+        facts, look, quality = self._request
+        self._request = None
+        self.cards.set_busy(False)
+        if blocker:
+            key, values = blocker
+            self.cards.show_message(t(key, **values))
+            return
+        self.cards.show_message("")
+        preset = commands.preset_for(look, quality, self._av1_supported())
+        self.paths.output_dir.mkdir(parents=True, exist_ok=True)
+        rec = jobs.create_job(self.store, self.paths, facts.path, facts.duration, look, quality, preset,
+                              lambda out, work: self._argv_builder(facts.path, preset, out, work))
+        self._show_render(rec)
+
+    def _make_session(self, rec: jobs.JobRecord) -> render.RenderSession:
+        from pipeline.ffio import find_tool
+        try:
+            ffprobe = find_tool("ffprobe")
+        except Exception:
+            ffprobe = None
+        kwargs = {"keep_awake": self._keep_awake} if self._keep_awake else {}
+        return render.RenderSession(rec, self.store, self.paths, ffprobe, **kwargs)
+
+    def _show_render(self, rec: jobs.JobRecord) -> None:
+        self.stack.setCurrentIndex(2)
+        self.render_view.begin(rec)
+
+    # ---- unfinished jobs from an earlier run ----------------------------------------------------
+    def _check_unfinished(self) -> None:
+        unfinished = self.store.unfinished()
+        self._unfinished = unfinished[-1] if unfinished else None
+        self.banner.setVisible(self._unfinished is not None)
+        if self._unfinished:
+            r = self._unfinished
+            self.banner_label.setText(t("banner.text", name=Path(r.src).name, look=r.look or t("card.none.title"),
+                                        done=r.segments_done, total=r.segments or "?"))
+
+    def resume_unfinished(self) -> None:
+        rec = self._unfinished
+        if rec is None or self._request is not None:
+            return
+        problem = jobs.resume_problem(rec)
+        if problem:
+            self.banner_label.setText(t(problem))
+            return
+        self._request = ("resume", rec, None)
+        worker = BlockerWorker(self._blockers, self)
+        worker.done.connect(self._on_resume_blockers)
+        self._start(worker)
+
+    def _on_resume_blockers(self, blocker) -> None:
+        _, rec, _ = self._request
+        self._request = None
+        if blocker:
+            key, values = blocker
+            self.banner_label.setText(t(key, **values))
+            return
+        self._show_render(rec)
+
+    def discard_unfinished(self) -> None:
+        if self._unfinished is not None:
+            self._unfinished.status = "discarded"
+            self.store.save(self._unfinished)
+        self._check_unfinished()
+
+    def closeEvent(self, event) -> None:
+        if self.render_view.is_active():
+            if not self._confirm(t("close.confirm_title"), t("close.confirm")):
+                event.ignore()
+                return
+            self.render_view.close_session()
+        self.render_view.wait_for_workers()
+        super().closeEvent(event)
 
     def _render_preflight(self) -> None:
         if not self.static_checks:

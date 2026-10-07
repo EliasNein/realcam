@@ -26,6 +26,18 @@ class ProbeWorker(QThread):
                 self.failed.emit(str(path), str(e))
 
 
+class BlockerWorker(QThread):
+    """Asks whether another render may start (lock file, enhance.py run elsewhere); PowerShell makes this slow."""
+    done = Signal(object)            # (strings key, values) or None
+
+    def __init__(self, check: Callable[[], object], parent=None):
+        super().__init__(parent)
+        self._check = check
+
+    def run(self) -> None:
+        self.done.emit(self._check())
+
+
 class PreflightWorker(QThread):
     done = Signal(object)            # list[Check]
 

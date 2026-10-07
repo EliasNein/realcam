@@ -102,10 +102,14 @@ class RenderSession:
         """Kill the whole process tree now. What is lost: the running segment (everything the process held in memory)."""
         if self.state.status != RUNNING:
             return
-        started = self.state.segment_started
-        self.state.lost_seconds = max(0.0, self._clock() - started) if started is not None and not self.state.concat else 0.0
+        self.state.lost_seconds = self.running_segment_seconds()
         self._kill()
         self._end(CANCELLED, t("render.cancelled", done=len(self.state.finished_segments), total=self.state.segments))
+
+    def running_segment_seconds(self) -> float:
+        """How long the running segment has been computing: what a cancel would lose."""
+        s = self.state
+        return max(0.0, self._clock() - s.segment_started) if s.segment_started is not None and not s.concat else 0.0
 
     # ---- polling --------------------------------------------------------------------------------
     def poll(self) -> list[dict]:
@@ -172,12 +176,17 @@ class RenderSession:
         return lines[-1][-300:] if lines else ""
 
     # ---- end ------------------------------------------------------------------------------------
-    def finalize(self) -> None:
-        """After a successful exit: check the output with ffprobe; only a verified output allows removing the work folder."""
+    def verify(self) -> list[str]:
+        """Blocking ffprobe check of the output (run it in a thread): the problems found, empty if the output is as expected."""
+        if self.ffprobe is None:
+            return [t("verify.no_ffprobe")]
+        return cleanup.verify_output(self.ffprobe, self.rec)
+
+    def complete(self, problems: list[str]) -> None:
+        """After verify(), in the GUI thread: finish the job. Only a verified output allows removing the work folder."""
         if self.state.status != FINALIZING:
             return
         self._release_process()
-        problems = cleanup.verify_output(self.ffprobe, self.rec) if self.ffprobe else [t("verify.no_ffprobe")]
         if problems:
             self._end(FAILED, t("render.verify_failed", problems="; ".join(problems)))
             return
@@ -188,6 +197,9 @@ class RenderSession:
             self.rec.cleaned = True
             note = t("render.work_removed")
         self._end(DONE, t("render.done", out=self.rec.out) + " " + note)
+
+    def finalize(self) -> None:
+        self.complete(self.verify())
 
     def _kill(self) -> None:
         if self._job is not None:
