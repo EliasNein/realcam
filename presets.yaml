@@ -130,7 +130,9 @@ presets:
       enabled: true
       tone: {black: 0.01, contrast: 0.25, gamma: 1.10, vibrance: 0.15}
       clarity: {amount: 0.15}
-      sharpen: {level: strong}   # Standard; schwaecher per --set look.sharpen.level=medium (oder mild)
+      sharpen:
+        level: strong            # Standard; schwaecher per --set look.sharpen.level=medium (oder mild)
+        motion_adaptive: {amount: 1.0, lo: 9.0, hi: 20.0}   # Standard an (Schwellen an Szene C abgestimmt); aus per --set look.sharpen.motion_adaptive=off
     motion: {samples: 4}  # Standard fuer Motion-Blur mit Look (wirkt, sobald ein Basis-Preset motion aktiviert; 2 zeigt Doppelkonturen)
 
   hevc:                 # als letztes Preset: HEVC erzwingen

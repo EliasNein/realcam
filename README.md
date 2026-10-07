@@ -153,11 +153,18 @@ on body edges, rims, logos and lettering (measured with `tools/bench_sharpen.py`
 `micro.limit 22`) shows fine rims at tail lights and logos and is not used. The luma stage alone runs at about 18 fps at 2160p on the CPU.
 Sharpening makes existing detail crisper (about 1.3-1.4x edge strength); it cannot add detail that the game footage does not contain.
 
-Optional `look.sharpen.motion_adaptive` (`--set look.sharpen.motion_adaptive.amount=1.0`, off by default; `lo`/`hi` in 8-bit levels,
-defaults 9/20): the sharpening mask is also reduced where the picture changes from one frame to the next. Sharpening motion-blurred
-foliage otherwise amplifies the encoder's block structure into a comb or streak pattern (and flicker); static edges (logos, instruments,
-lettering) keep most of their sharpening, edges that move in the frame are attenuated too. `showroom` sets `motion.samples: 4`
-(effective when the base preset enables the motion blur; 2 samples show double contours on fast motion).
+`showroom` enables `look.sharpen.motion_adaptive` (amount 1.0, `lo` 9, `hi` 20, in 8-bit levels): the sharpening mask is also reduced where
+the picture changes from one frame to the next (blurred |frame - previous frame|, smoothstep between `lo` and `hi`). Sharpening motion-blurred
+foliage otherwise amplifies the encoder's block structure into a comb or streak pattern and flicker. Effect, measured on the fast foliage
+scene C: edge gain 1.39x -> 1.03x, flicker flip rate 9.7 % -> 4 %; static edges (logos, instruments, lettering) keep most of their sharpening,
+edges that move in the frame are attenuated too (car edges in B about -5 %). **The thresholds 9/20 were tuned on scene C only**; other footage
+may need other values (`--set look.sharpen.motion_adaptive.lo=...`). The mask cannot tell moving content from moving camera: in the rainy scene A (fast camera, reflections, spray, drops) the edge gain of those regions drops from about 1.4-1.6x to 1.1-1.3x, but stays above the unsharpened base. Switch it off with `--set look.sharpen.motion_adaptive=off`.
+`showroom` also sets `motion.samples: 4` (effective when the base preset enables the motion blur; 2 samples show double contours on fast motion).
+
+Encoder: with `export`, `export-lite` and a 2160p source the combination `-p export,showroom` / `-p export-lite,showroom` encodes with `hevc_nvenc`
+at 80 Mbit/s, 10-bit (VMAF 4K against a lossless render of the look: 99.5-99.9 at 80M, 97.2-99.4 at 50M, 99.8-100 at 100M; the file bitrate runs
+about 8-10 % above the nominal value). The comb pattern in fast foliage is already in the lossless render, i.e. it comes from the sharpening and not
+from the encoder, and stays at every bitrate.
 
 ### HEVC or AV1?
 
@@ -248,5 +255,6 @@ When redistributing weights or results, check the original licences of the respe
 * `tools/measure_halos_noise.py`: halos (overshoot at edges) and noise gain in dark areas of a look after the encoder (base render against look render).
 * `tools/measure_region_edges.py`: edge strength per image region of several renders against a base (does a variant keep static edges sharp?).
 * `tools/crop_sheet.py`: labelled side-by-side crops of the same frame from several videos (100 % pixels, optional nearest-neighbour zoom).
+* `tools/measure_motion_mask.py`: per image region, how much `look.sharpen.motion_adaptive` attenuates the sharpening (mean attenuation and share of strongly attenuated pixels, from the base render).
 * `tools/measure_vmaf.py`: VMAF (4K model) and per-region PSNR of encodes against a lossless render of the look, with the file bitrate.
 * Git: model weights, videos, test images and work folders are in `.gitignore`.
