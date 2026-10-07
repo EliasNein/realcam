@@ -48,7 +48,7 @@ def test_repo_weights_table_matches_readme():
 def test_cuda_ok_rtx4070():
     checks, gpu = PF.check_cuda(_cuda())
     assert _ids(checks) == [("cuda", PF.OK)] and gpu.supports_av1
-    assert "RTX 4070" in checks[0].text and "12.0" in checks[0].text
+    assert "RTX 4070" in checks[0].text and "12,0" in checks[0].text
 
 
 def test_cuda_no_gpu():

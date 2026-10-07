@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from .. import constants as C
-from ..strings import t
+from ..strings import number, t
 
 
 class ProbeError(Exception):
@@ -47,7 +47,7 @@ class Warn:
 
 
 def format_number(value: float) -> str:
-    return f"{value:.2f}".rstrip("0").rstrip(".")
+    return number(value, 2, trim=True)
 
 
 def format_duration(seconds: float) -> str:
@@ -132,7 +132,7 @@ def warnings_for(facts: VideoFacts) -> list[Warn]:
         out.append(Warn("warn.low_res", {"width": facts.width, "height": facts.height}))
     if facts.bitrate_mbit is not None and facts.bitrate_mbit < C.LOW_BITRATE_MBIT:
         out.append(Warn("warn.low_bitrate", {
-            "bitrate": format_number(facts.bitrate_mbit), "tested": format_number(C.LOW_BITRATE_MBIT)}))
+            "bitrate": number(facts.bitrate_mbit, 1), "tested": format_number(C.LOW_BITRATE_MBIT)}))
     if abs(facts.fps - C.EXPECTED_FPS) > C.FPS_TOLERANCE:
         out.append(Warn("warn.fps", {"fps": format_number(facts.fps), "expected": format_number(C.EXPECTED_FPS)}))
     if facts.vfr:

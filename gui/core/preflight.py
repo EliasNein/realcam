@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import constants as C
-from ..strings import t
+from ..strings import number, t
 
 OK, INFO, WARN, ERROR = "ok", "info", "warn", "error"
 
@@ -103,9 +103,9 @@ def check_cuda(run: Callable[[float], subprocess.CompletedProcess] = _run_cuda_s
     vram_gb = gpu.vram_bytes / 1024**3
     if gpu.capability < C.MIN_COMPUTE_CAPABILITY:
         return [Check("cuda", ERROR, t("preflight.cuda.gpu_old", name=gpu.name))], gpu
-    out = [Check("cuda", OK, t("preflight.cuda.ok", name=gpu.name, vram=f"{vram_gb:.1f}", torch=gpu.torch_version))]
+    out = [Check("cuda", OK, t("preflight.cuda.ok", name=gpu.name, vram=number(vram_gb), torch=gpu.torch_version))]
     if vram_gb < C.RECOMMENDED_VRAM_GB - 0.5:   # cards sold as 8 GB report slightly less than 8.0 GiB
-        out.append(Check("vram", WARN, t("preflight.vram.low", vram=f"{vram_gb:.1f}", recommended=C.RECOMMENDED_VRAM_GB)))
+        out.append(Check("vram", WARN, t("preflight.vram.low", vram=number(vram_gb), recommended=C.RECOMMENDED_VRAM_GB)))
     if not gpu.supports_av1:
         out.append(Check("av1", INFO, t("preflight.av1.missing")))
     return out, gpu
@@ -163,7 +163,7 @@ def check_disk(duration_s: float | None, work_dir: Path = C.DEFAULT_WORK_DIR, ou
         except OSError:
             out.append(Check("disk", WARN, t("preflight.disk.unknown", drive=drive)))
             continue
-        gb = lambda b: f"{b / 1024**3:.1f}"
+        gb = lambda b: number(b / 1024**3)
         if free < needed:
             out.append(Check("disk", ERROR, t("preflight.disk.low", needed=gb(needed), drive=drive, free=gb(free))))
         else:

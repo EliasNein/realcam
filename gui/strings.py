@@ -62,6 +62,17 @@ STRINGS: dict[str, dict[str, str]] = {
 }
 
 
+DECIMAL_SEPARATOR = {"de": ","}
+
+
+def number(value: float, digits: int = 1, trim: bool = False) -> str:
+    """Format a number with the decimal separator of the active language."""
+    text = f"{value:.{digits}f}"
+    if trim and "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text.replace(".", DECIMAL_SEPARATOR.get(LANGUAGE, "."))
+
+
 def t(key: str, **values: object) -> str:
     """Look up a text in the active language and fill in the placeholders."""
     text = STRINGS[LANGUAGE][key]

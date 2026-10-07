@@ -98,4 +98,4 @@ def test_collect_videos_expands_folders_and_filters(tmp_path):
 
 def test_format_helpers():
     assert P.format_duration(65.4) == "1:05" and P.format_duration(3725) == "1:02:05"
-    assert P.format_number(59.94) == "59.94" and P.format_number(60.0) == "60"
+    assert P.format_number(59.94) == "59,94" and P.format_number(60.0) == "60"
