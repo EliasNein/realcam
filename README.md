@@ -184,6 +184,50 @@ Two runs with the same configuration produce byte-identical files (verified with
 Resume: a run that was killed hard in the middle of segment 4 of 6 continues with the same command, the finished segments stay unchanged (MD5 verified), only the interrupted segment is rendered again.
 The work folders (`work/<name>_<preset>_<hash>`) contain the segments; they may be deleted after the run.
 
+## Examples
+
+The pipeline shifts the look of the footage; it does not produce photorealism and it cannot add detail the game footage does not contain.
+All images are crops of the same frame (scene B, frame 150: rear of a car with lettering and a licence plate) unless noted, enlarged so that
+single pixels are visible. The left side is always the 1440p source frame enlarged to the same size. The images are cut from the author's own
+gameplay recordings (Forza Horizon 6) and only serve to demonstrate the modes. All numbers are **measured** on an RTX 4070 (times: 2-minute run; edge strength and flicker: 8-second clips; edge strength = mean
+gradient of the luma in the region, relative to the same render without a look).
+
+| Mode | Image | What it does | Time per video minute | Note |
+|---|---|---|---|---|
+| `export-lite` | [B150](docs/images/b150_export-lite_vs_original.jpg) | Lanczos upscale to 2160p, deblock + deband, motion blur (4 samples) | 13.5 min (measured) | Smooth enlargement, nothing invented; text stays as soft as the source |
+| `export` | [B150](docs/images/b150_export_vs_original.jpg), [E150](docs/images/e150_export_vs_export-lite_cockpit.jpg) | like `export-lite`, but AI restoration (Real-ESRGAN general-x4v3) | 34 min (measured) | Crisper lettering and plate; the letters match the source in this frame. **Weakness:** it invents texture on organic surfaces (leather of the steering wheel) |
+| `export-lite,showroom` | [B150](docs/images/b150_showroom_vs_original.jpg) | tone curve, weak clarity, two-stage masked sharpening (`strong`), vibrance | no extra time (measured: the look runs in parallel to the encoder) | Edge strength in scene B 1.16x-1.41x of the plain `export-lite` render; sharper, not more detailed |
+| `showroom`, `motion_adaptive` off/on | [C150](docs/images/c150_showroom_motion-adaptive_off_vs_on.jpg) | attenuates the sharpening where the picture changes between frames | no extra time (measured) | **Without it**, `strong` sharpening turns motion-blurred foliage into a comb/streak pattern (edge gain 1.60x, flip rate 8.6 %); with it 1.18x and 3.1 % (measured, scene C) |
+
+The grain looks `subtle`, `cinematic` and `dashcam-real` are not shown here.
+
+### export-lite and export
+
+![Original against export-lite: licence plate and lettering, scene B frame 150, 3x enlargement](docs/images/b150_export-lite_vs_original.jpg)
+
+*`export-lite`: a plain, clean enlargement; the lettering is as soft as in the source.*
+
+![Original against export: licence plate and lettering, scene B frame 150, 3x enlargement](docs/images/b150_export_vs_original.jpg)
+
+*`export`: lettering and plate are clearly crisper and the characters match the source.*
+
+![Original against export and export-lite on the steering wheel, scene E frame 150](docs/images/e150_export_vs_export-lite_cockpit.jpg)
+
+*Weakness of `export`: the regular leather grain of the original is replaced by invented, swirly lines (middle) and small marks appear inside the "R";
+`export-lite` (right) stays true to the source. Use `export` for clips with lettering and plates in the foreground, not for clips dominated by organic textures.*
+
+### showroom
+
+![Original against export-lite with the showroom look, scene B frame 150, 3x enlargement](docs/images/b150_showroom_vs_original.jpg)
+
+*`export-lite,showroom`: stronger contrast, warmer colours and sharper edges; the lettering is not more detailed than in the source.*
+
+![Foliage in scene C frame 150 without look, with showroom and motion_adaptive off, with showroom and motion_adaptive on](docs/images/c150_showroom_motion-adaptive_off_vs_on.jpg)
+
+*Fast, motion-blurred foliage (320x200 px of the 2160p frame, enlarged 1.6x). Middle: comb and streak pattern from the sharpening; right: `motion_adaptive` on
+(the default of `showroom`). The mask cannot tell a moving camera from a moving subject: in the rainy scene A the edge gain of reflections, spray and drops falls from about 1.4-1.6x
+to 1.1-1.3x (measured). The thresholds were tuned on scene C.*
+
 ## Configuration
 
 All values are in [presets.yaml](presets.yaml) (`defaults`, `presets`). Load your own file with `--config my.yaml`.

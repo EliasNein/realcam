@@ -42,6 +42,11 @@ tmp/
 *.jpg
 *.jpeg
 
+# README example images (small JPEGs only)
+!docs/
+!docs/images/
+!docs/images/*.jpg
+
 # Claude Code (persönlich)
 .claude/settings.local.json
 CLAUDE.local.md
