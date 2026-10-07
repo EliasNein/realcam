@@ -248,4 +248,5 @@ When redistributing weights or results, check the original licences of the respe
 * `tools/measure_halos_noise.py`: halos (overshoot at edges) and noise gain in dark areas of a look after the encoder (base render against look render).
 * `tools/measure_region_edges.py`: edge strength per image region of several renders against a base (does a variant keep static edges sharp?).
 * `tools/crop_sheet.py`: labelled side-by-side crops of the same frame from several videos (100 % pixels, optional nearest-neighbour zoom).
+* `tools/measure_vmaf.py`: VMAF (4K model) and per-region PSNR of encodes against a lossless render of the look, with the file bitrate.
 * Git: model weights, videos, test images and work folders are in `.gitignore`.
