@@ -31,7 +31,7 @@ class AppPaths:
 
     @property
     def lock(self) -> Path:
-        return self.data / "render.lock"
+        return self.data / "render-lock.json"
 
 
 @dataclass
