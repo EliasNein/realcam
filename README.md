@@ -100,13 +100,32 @@ can be disabled with `--no-compare`). Abort with Ctrl+C; the same command resume
 ## GUI (work in progress)
 
 The GUI lives in `gui/` and is optional; the CLI does not need it. It only starts `enhance.py` as a separate process and never imports `torch`.
-Milestone 1 is finished: window with drag and drop and folder selection, video facts via ffprobe, warnings for the source, and a system check
-(FFmpeg, model weights in `models/`, CUDA/VRAM, free disk space). Rendering is not wired up yet. The texts are German and live in `gui/strings.py`.
+Milestones 1 and 3 are finished: window with drag and drop and folder selection, video facts via ffprobe, warnings for the source, a system
+check (FFmpeg, model weights in `models/`, CUDA/VRAM, free disk space), five text cards (four looks and "ohne Look") with the estimated render time
+(Standard = `export-lite`, KI = `export`), and rendering of the selected video with progress, cancel, "pause after this segment" and resume.
+The texts are German and live in `gui/strings.py`. Previews with images, the queue and the "Erweitert" dialog are not built yet.
+
+How a render works:
+
+* `enhance.py` runs as a separate process, started inside a Windows job object. Cancel kills the whole tree (including FFmpeg children);
+  closing or crashing the GUI does the same. Progress comes from `enhance.py --progress-json FILE` (one JSON object per line: `batch`,
+  `file_start`, `job`, `segment_start`, `progress`, `segment_done`, `concat`, `file_done`, `batch_done`, `error`, `cancelled`); without the flag
+  the pipeline behaves exactly as before.
+* Each render is a job: `%LOCALAPPDATA%\realcam\jobs\<id>\job.json` plus event files and logs, its own work folder `work\gui_<id>`, and a
+  unique output name `<name>_<preset>_001.mp4` (`_002`, ...). The source is never written. The comparison video is switched off.
+* Cancel loses the running segment (at most 20 s of source video: about 4.5 min of rendering with Standard, about 12 min with KI, computed from the
+  measured rates); finished segments stay. Pause waits for the end of the running segment and then stops the process. Resume repeats the identical
+  call and is only offered if the source file is unchanged. Unfinished jobs are offered at the next start.
+* Only one render at a time: a lock file (`render-lock.json`, PID and process start time; stale entries are replaced) and a check for another running
+  `enhance.py`. The PC is kept awake while rendering.
+* After a successful render the output is checked with ffprobe (resolution, frame count, duration). Only then is the job's own work folder deleted
+  (`gui_<id>`, exactly the folder recorded in the job record, never after cancel or error). This can be switched off (`cleanup_work` in
+  `gui/core/jobs.py`).
 
 ```powershell
 .\.venv\Scripts\python -m pip install -r requirements-gui.txt   # PySide6, pytest, pytest-qt (pinned)
 .\.venv\Scripts\python -m gui                                     # start the window
-.\.venv\Scripts\python -m pytest                                  # tests (the one test marked gpu needs a free GPU)
+.\.venv\Scripts\python -m pytest                                  # tests (tests marked gpu are skipped; `pytest -m gpu` needs a free GPU)
 ```
 
 The thresholds of the source warnings (`UNTESTED_BELOW_HEIGHT`, `LOW_BITRATE_MBIT`, ...) are constants in `gui/constants.py`; they mark what was tested, not a quality limit.
