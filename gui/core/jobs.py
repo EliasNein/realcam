@@ -33,6 +33,18 @@ class AppPaths:
     def lock(self) -> Path:
         return self.data / "render-lock.json"
 
+    @property
+    def previews(self) -> Path:
+        return self.data / "previews"
+
+    @property
+    def preview_tmp(self) -> Path:
+        return self.data / "preview_tmp"
+
+    @property
+    def short_previews(self) -> Path:
+        return self.data / "short_previews"
+
 
 @dataclass
 class JobRecord:
