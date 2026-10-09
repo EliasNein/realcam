@@ -47,3 +47,17 @@ class PreflightWorker(QThread):
 
     def run(self) -> None:
         self.done.emit(self._preflight())
+
+
+class CleanupWorker(QThread):
+    """Housekeeping of the preview cache at program start."""
+
+    def __init__(self, cleanup: Callable[[], object], parent=None):
+        super().__init__(parent)
+        self._cleanup = cleanup
+
+    def run(self) -> None:
+        try:
+            self._cleanup()
+        except OSError:
+            pass

@@ -18,18 +18,19 @@ GOOD = [PF.Check("ffmpeg", PF.OK, "FFmpeg gefunden"), PF.Check("weights", PF.OK,
 
 
 @pytest.fixture
-def app(qtbot, ffprobe, clips, tmp_path, monkeypatch):
+def app(qtbot, ffprobe, clips, tmp_path, monkeypatch, make_engine):
     monkeypatch.setenv("FAKE_SEG_SECONDS", "1.2")
     paths = AppPaths(data=tmp_path / "data", work_parent=tmp_path / "work", output_dir=tmp_path / "out")
     paths.work_parent.mkdir()
-    awake, answers = [], {"confirm": True}
+    awake, answers, windows = [], {"confirm": True}, []
 
     def make(preflight=lambda: list(GOOD), blockers=lambda: None, confirm=None):
         w = MW.MainWindow(probe=lambda p: probe_video(p, ffprobe), preflight=preflight, paths=paths,
                           argv_builder=lambda src, preset, out, work: commands.build_argv(src, preset, out, work, sys.executable, FAKE),
-                          blockers=blockers, keep_awake=lambda on: awake.append(on),
+                          blockers=blockers, keep_awake=lambda on: awake.append(on), engine_factory=lambda: make_engine(paths),
                           confirm=confirm or (lambda title, text: answers["confirm"]))
         qtbot.addWidget(w)
+        windows.append(w)   # alive until the end of the test: queued signals must not meet a destroyed window
         w.show()
         qtbot.waitUntil(lambda: bool(w.static_checks), timeout=5000)
         w.add_paths([clips["good"]])
@@ -38,7 +39,9 @@ def app(qtbot, ffprobe, clips, tmp_path, monkeypatch):
         return w
 
     make.paths, make.awake, make.answers = paths, awake, answers
-    return make
+    yield make
+    for w in windows:
+        w.wait_for_workers()
 
 
 def _go_to_cards(w, qtbot):

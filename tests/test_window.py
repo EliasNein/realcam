@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 from gui import constants as C
 from gui.core import preflight as PF
 from gui.core import probe as P
+from gui.core.jobs import AppPaths
 from gui.core.probe import probe_video
 from gui.ui import main_window as MW
 
@@ -19,14 +20,20 @@ GOOD = [PF.Check("ffmpeg", PF.OK, "FFmpeg gefunden: x"), PF.Check("weights", PF.
 
 
 @pytest.fixture
-def make_window(qtbot, ffprobe):
+def make_window(qtbot, ffprobe, make_engine, tmp_path):
+    windows = []
+
     def make(preflight=lambda: list(GOOD), probe=None):
-        w = MW.MainWindow(probe=probe or (lambda p: probe_video(p, ffprobe)), preflight=preflight)
+        w = MW.MainWindow(probe=probe or (lambda p: probe_video(p, ffprobe)), preflight=preflight,
+                          engine_factory=lambda: make_engine(AppPaths(data=tmp_path / 'data')))
         qtbot.addWidget(w)
+        windows.append(w)   # alive until the end of the test: queued signals must not meet a destroyed window
         w.show()
         qtbot.waitUntil(lambda: bool(w.static_checks), timeout=5000)
         return w
-    return make
+    yield make
+    for w in windows:
+        w.wait_for_workers()
 
 
 def _mime(*paths):

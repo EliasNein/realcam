@@ -56,3 +56,15 @@ def _enhance_processes() -> list[str]:
 def _gpu_tests_need_free_gpu(request):
     if request.node.get_closest_marker("gpu") and _enhance_processes():
         pytest.fail("enhance.py is running: refusing to start a GPU test")
+
+
+@pytest.fixture
+def make_engine(ffmpeg, ffprobe):
+    """PreviewEngine on the fake enhance.py (no GPU, no PowerShell): make_engine(paths) -> engine."""
+    import sys
+    from pathlib import Path
+
+    from gui.core.preview import PreviewEngine
+
+    fake = Path(__file__).parent / "fakes" / "fake_enhance.py"
+    return lambda paths, **kw: PreviewEngine(paths, ffmpeg, ffprobe, python=sys.executable, script=fake, external=lambda: ([], True), **kw)

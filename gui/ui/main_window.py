@@ -12,12 +12,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QFrame, QHBoxLayo
 
 from .. import constants as C
 from ..core import commands, jobs, render
+from ..core.preview import PreviewEngine
 from ..core import preflight as PF
 from ..core.probe import ProbeError, VideoFacts, collect_videos, format_duration, format_number, probe_video, warnings_for
 from ..strings import number, t
-from .cards_view import CardsView
+from .cards_view import CardsView, open_default
+from .preview_controller import PreviewController
 from .render_view import RenderView
-from .workers import BlockerWorker, PreflightWorker, ProbeWorker
+from .workers import BlockerWorker, CleanupWorker, PreflightWorker, ProbeWorker
 
 CLOSE_WAIT_MS = 5000
 _LEVEL_MARK = {PF.OK: "✓", PF.INFO: "ℹ", PF.WARN: "⚠", PF.ERROR: "✕"}
@@ -72,7 +74,8 @@ class MainWindow(QMainWindow):
     def __init__(self, probe: Callable[[Path], VideoFacts] = _default_probe,
                  preflight: Callable[[], list[PF.Check]] = _default_preflight, start_preflight: bool = True,
                  paths: jobs.AppPaths | None = None, argv_builder: Callable | None = None, blockers: Callable | None = None,
-                 keep_awake: Callable[[bool], object] | None = None, confirm: Callable[[str, str], bool] | None = None):
+                 keep_awake: Callable[[bool], object] | None = None, confirm: Callable[[str, str], bool] | None = None,
+                 engine_factory: Callable[[], PreviewEngine] | None = None, opener: Callable[[Path], object] = open_default):
         super().__init__()
         self._probe = probe
         self._preflight = preflight
@@ -169,7 +172,8 @@ class MainWindow(QMainWindow):
         foot.addWidget(self.next_button)
         layout.addLayout(foot)
 
-        self.cards = CardsView()
+        self.preview = PreviewController(engine_factory or self._default_engine, self)
+        self.cards = CardsView(self.preview, opener)
         self.cards.back_requested.connect(self.show_start)
         self.cards.render_requested.connect(self.request_render)
         self.stack.addWidget(self.cards)
@@ -182,6 +186,18 @@ class MainWindow(QMainWindow):
 
         if start_preflight:
             self.run_preflight()
+
+    def _default_engine(self) -> PreviewEngine:
+        from pipeline.ffio import find_tool
+        return PreviewEngine(self.paths, find_tool("ffmpeg"), find_tool("ffprobe"))
+
+    def cleanup_previews(self) -> None:
+        """At program start, in the background: cache limit, leftovers of crashed runs, old short previews."""
+        try:
+            engine = self.preview.engine
+        except Exception:   # no ffmpeg: the system check reports it
+            return
+        self._start(CleanupWorker(engine.start_cleanup, self))
 
     @staticmethod
     def _heading(text: str) -> QLabel:
@@ -253,6 +269,7 @@ class MainWindow(QMainWindow):
     def wait_for_workers(self) -> None:
         for w in list(self._workers):
             w.wait()
+        self.preview.wait_for_workers()
 
     def closeEvent(self, event) -> None:
         """A QThread destroyed while running aborts the process: give workers a moment, then stop them."""
@@ -353,6 +370,7 @@ class MainWindow(QMainWindow):
         facts = self.selected_facts()
         if facts is None or not self.can_render() or self._request is not None:
             return
+        self.preview.cancel_all(wait=True)   # a preview or short preview in progress gives way to the render
         self._request = (facts, look, quality)
         self.cards.set_busy(True)
         self.cards.show_message(t("render.checking"))
@@ -432,6 +450,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             self.render_view.close_session()
+        self.preview.shutdown()
         self.render_view.wait_for_workers()
         super().closeEvent(event)
 

@@ -10,6 +10,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
+    window.cleanup_previews()
     return app.exec()
 
 

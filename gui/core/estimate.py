@@ -37,3 +37,8 @@ def max_segment_loss_minutes(quality: str) -> float:
 def disk_need_bytes(duration_s: float) -> int:
     """Output plus work folder (about as large as the output, measured)."""
     return 2 * estimate_output_bytes(duration_s, C.DEFAULT_OUTPUT_MBIT)
+
+
+def short_minutes(quality: str, seconds: float = 5.0) -> float:
+    """Short preview (the real pipeline on a few seconds): the per-minute rate, start-up of the models is not in it."""
+    return seconds / 60 * RATE_MIN_PER_VIDEO_MIN[quality]
