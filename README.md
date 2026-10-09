@@ -100,10 +100,31 @@ can be disabled with `--no-compare`). Abort with Ctrl+C; the same command resume
 ## GUI (work in progress)
 
 The GUI lives in `gui/` and is optional; the CLI does not need it. It only starts `enhance.py` as a separate process and never imports `torch`.
-Milestones 1 and 3 are finished: window with drag and drop and folder selection, video facts via ffprobe, warnings for the source, a system
-check (FFmpeg, model weights in `models/`, CUDA/VRAM, free disk space), five text cards (four looks and "ohne Look") with the estimated render time
-(Standard = `export-lite`, KI = `export`), and rendering of the selected video with progress, cancel, "pause after this segment" and resume.
-The texts are German and live in `gui/strings.py`. Previews with images, the queue and the "Erweitert" dialog are not built yet.
+Milestones 1, 3 and 2 are finished: window with drag and drop and folder selection, video facts via ffprobe, warnings for the source, a system
+check (FFmpeg, model weights in `models/`, CUDA/VRAM, free disk space), five look cards (four looks and "ohne Look") with pictures (original next to
+result), the estimated render time (Standard = `export-lite`, KI = `export`), a position slider, a zoom viewer and a short preview, and rendering of
+the selected video with progress, cancel, "pause after this segment" and resume.
+The texts are German and live in `gui/strings.py`. The queue and the "Erweitert" dialog are not built yet.
+
+How the previews work (measurements: `docs/gui-preview-milestone2.md`):
+
+* Per position the base preset (`export-lite` or `export`) runs once on 4 frames through the real pipeline into a lossless x264 file (GPU,
+  `enhance.py --start --duration`, `segment_overlap_seconds=0.05`), then each look runs on that file as `draft,<look>` on the CPU. The last frame of each
+  result is cut out as a JPEG; the videos are deleted, only the JPEGs stay. A fifth card, "ohne Look", is the base itself. The original is the
+  source frame scaled to the same size (Lanczos) so that both can be compared pixel for pixel.
+* Five positions are chosen automatically (evenly spread, at least 1 s from the ends, not black or flat); the slider picks any other position on a
+  0.1 s grid. Dragging only scrubs the original (a small frame, no pipeline); releasing computes the position (`Berechne ...` is shown). Measured on an
+  RTX 4070: about 15 s per position with Standard and 18 s with KI, 76 s and 91 s for all five.
+* Click on a picture: zoom viewer with a 100 % section of original and result that move together (mouse or arrow keys), side by side or as a
+  before/after switch (space bar).
+* "Kurzvorschau (5 s)": the real pipeline with the real preset on 5 s from the current position, opened in the default player (measured 74 s with Standard,
+  184 s with KI). The last three short previews are kept in `%LOCALAPPDATA%\realcam\short_previews`.
+* Cache: `%LOCALAPPDATA%\realcam\previews\<key>\image.jpg`, at most 2 GB (least recently used entries go first); the key covers the source (size, time),
+  position, quality, look, the effective settings of base and look and `JOB_VERSION`. Cleaned at program start (limit, leftovers of crashed runs).
+* The GPU lock is shared with the render: a preview never runs together with a render, two previews never run together, and no preview starts while another
+  `enhance.py` runs. Clicking "Rendern" stops a running preview.
+* Korn looks (subtle, cinematic, dashcam-real) look stronger in the preview than in the result because the encoder weakens grain (measured: the HEVC
+  result has 9-17 % less fine detail than the preview picture); the window says so.
 
 How a render works:
 
