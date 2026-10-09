@@ -176,6 +176,8 @@ class PreviewEngine:
         self._cancel = threading.Event()
         self._job: winproc.JobObject | None = None
         self._mutex = threading.Lock()
+        self._config_cache: dict = {}
+        self._config_stamp: int | None = None
 
     def start_cleanup(self) -> None:
         """At program start: cache size limit, leftovers of crashed runs, old short previews."""
@@ -188,10 +190,16 @@ class PreviewEngine:
 
     # ---- keys -----------------------------------------------------------------------------------
     def _configs(self, quality: str, look: str | None) -> tuple[dict, dict | None]:
-        overrides = [*commands.LOSSLESS_OVERRIDES, f"segment_overlap_seconds={commands.PREVIEW_OVERLAP_S}"]
-        base = pipeline_config.load(self.presets, BASE[quality], overrides)
-        lk = pipeline_config.load(self.presets, f"draft,{look}", list(commands.LOSSLESS_OVERRIDES)) if look else None
-        return base, lk
+        """Effective settings of the base and the look run; parsed once per version of the preset file (keys are asked for often)."""
+        stamp = self.presets.stat().st_mtime_ns
+        if self._config_stamp != stamp:
+            self._config_cache, self._config_stamp = {}, stamp
+        if (quality, look) not in self._config_cache:
+            overrides = [*commands.LOSSLESS_OVERRIDES, f"segment_overlap_seconds={commands.PREVIEW_OVERLAP_S}"]
+            base = pipeline_config.load(self.presets, BASE[quality], overrides)
+            lk = pipeline_config.load(self.presets, f"draft,{look}", list(commands.LOSSLESS_OVERRIDES)) if look else None
+            self._config_cache[(quality, look)] = (base, lk)
+        return self._config_cache[(quality, look)]
 
     def keys(self, src: Source, frame: int, quality: str) -> dict:
         """slot -> cache key: source (size, time), position, quality, look, effective settings of base and look, version."""
