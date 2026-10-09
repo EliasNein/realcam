@@ -132,11 +132,12 @@ def main(argv: list[str] | None = None) -> int:
   python enhance.py clip.mp4 -p export-lite,cinematic          2160p60, Lanczos, Kamera-Look (Basis zuerst, Look zuletzt)
   python enhance.py clip.mp4 -p export,dashcam-real            mit KI-Restaurierung (Schrift/Kennzeichen)
   python enhance.py clip.mp4 -p export1440,subtle,av1          1440p60, AV1 statt HEVC
+  python enhance.py clip.mp4 -p export-lite,showroom           2160p60, scharf und knackig, ohne Korn
   python enhance.py clip.mp4 -p draft,cinematic --start 40 --duration 10      kurzer Test
   python enhance.py clip.mp4 -p export-lite --set encode.bitrate=60M --set motion.samples=6
   python enhance.py a.mp4 b.mp4 -p export-lite,cinematic       mehrere Dateien nacheinander
   python enhance.py -p export-lite,cinematic --input-dir clips/ --output-dir out/      ganzer Ordner (Stapelmodus)
-Basis-Presets: passthrough, export, export-lite, export1440, draft | Looks: subtle, cinematic, dashcam-real | Encoder: hevc, av1
+Basis-Presets: passthrough, export, export-lite, export1440, draft | Looks: subtle, cinematic, dashcam-real, showroom | Encoder: hevc, av1
 Stapelmodus: Dateien laufen nacheinander, ein Fehler bei einer Datei bricht den Rest nicht ab, am Ende steht eine Zusammenfassung;
 fertige Ausgaben werden uebersprungen (--overwrite schreibt sie neu, fertige Segmente in work/ bleiben gueltig). Exit-Code 1, wenn mindestens eine Datei fehlschlug.
 Alle Presets und Werte: presets.yaml (eigene Datei mit --config). Abgebrochene Laeufe: gleichen Aufruf wiederholen (Resume).
