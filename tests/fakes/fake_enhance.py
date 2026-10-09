@@ -5,6 +5,9 @@ Behaviour is controlled by environment variables (the GUI's command line is fixe
   FAKE_SEG_SECONDS (1)  time per segment              FAKE_FAIL_AT (0)      segment number that fails with an error event
   FAKE_CHILDREN (0)     1: start a child and a grandchild process (pids go to <work>/children.json)
   FAKE_BAD_OUTPUT (0)   1: write an output with the wrong number of frames
+Preview runs (--set encode.codec=libx264, the lossless files of the GUI preview) write FAKE_PREVIEW_FRAMES (4) frames of 64x36 in a colour taken
+from the preset name, wait FAKE_PREVIEW_SECONDS (0) first and fail when FAKE_PREVIEW_FAIL is 1 and the preset has the look named in it.
+FAKE_CALLS (path): every call appends its argument list as one JSON line.
 """
 import argparse
 import json
@@ -32,6 +35,20 @@ def _spawn_children(work: Path) -> None:
     (work / "children.json").write_text(json.dumps({"child": child.pid, "grandchild": grand_pid}))
 
 
+def _preview_run(args) -> int:
+    import hashlib
+    time.sleep(_env("FAKE_PREVIEW_SECONDS", 0.0))
+    fail = os.environ.get("FAKE_PREVIEW_FAIL", "")
+    if fail and fail in args.preset:
+        print("simulated preview failure", file=sys.stderr)
+        return 1
+    colour = hashlib.md5(args.preset.encode()).hexdigest()[:6]
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([find_tool("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0x{colour}:size=64x36:rate=60",
+                    "-frames:v", str(_env("FAKE_PREVIEW_FRAMES", 4)), "-c:v", "libx264", "-pix_fmt", "yuv420p", str(args.output)], check=True)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("inputs", nargs="*", type=Path)
@@ -42,7 +59,14 @@ def main() -> int:
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--progress-json", type=Path)
     ap.add_argument("--set", dest="overrides", action="append", default=[])
+    ap.add_argument("--start", type=float)
+    ap.add_argument("--duration", type=float)
     args = ap.parse_args()
+    if os.environ.get("FAKE_CALLS"):
+        with open(os.environ["FAKE_CALLS"], "a", encoding="utf-8") as f:
+            f.write(json.dumps(sys.argv[1:]) + "\n")
+    if "encode.codec=libx264" in args.overrides:
+        return _preview_run(args)
     if args.progress_json:
         events.configure(args.progress_json)
     segments, frames, seg_s = _env("FAKE_SEGMENTS", 4), _env("FAKE_FRAMES", 60), _env("FAKE_SEG_SECONDS", 1.0)
