@@ -91,7 +91,7 @@ class MainWindow(QMainWindow):
         self._workers: list = []
         self._pending: set[Path] = set()
         self.setWindowTitle(t("app.title"))
-        self.resize(940, 720)
+        self.resize(1280, 900)
         self.setAcceptDrops(True)
 
         self.stack = QStackedWidget()

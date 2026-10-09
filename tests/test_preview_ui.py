@@ -46,6 +46,7 @@ def test_computing_is_visible_while_a_position_is_calculated(app, qtbot, monkeyp
     _go_to_cards(w, qtbot)
     qtbot.waitUntil(lambda: "Berechne" in w.cards.cards["subtle"].result.text(), timeout=20000)
     assert w.cards.cancel_button.isVisibleTo(w.cards)
+    qtbot.waitUntil(lambda: w.cards.status.text().startswith("Position 1:") and "Berechne" in w.cards.status.text(), timeout=20000)
     qtbot.waitUntil(lambda: _all_shown(w), timeout=60000)
     _wait_idle(w, qtbot)
     assert not w.cards.cancel_button.isVisibleTo(w.cards)
@@ -196,3 +197,18 @@ def test_start_cleanup_runs_in_the_background(app, qtbot):
     w.cleanup_previews()
     w.wait_for_workers()
     qtbot.waitUntil(lambda: not old.exists(), timeout=10000)
+
+
+def test_cards_use_two_columns_when_wide_and_one_when_narrow(app, qtbot, calls_file):
+    w = app()
+    _go_to_cards(w, qtbot)
+    w.resize(3000, 900)
+    qtbot.waitUntil(lambda: w.cards._columns == 2, timeout=5000)
+    w.resize(500, 900)
+    qtbot.waitUntil(lambda: w.cards._columns == 1, timeout=5000)
+    assert [w.cards.grid.getItemPosition(i)[1] for i in range(5)] == [0, 0, 0, 0, 0]
+    w.resize(3000, 900)
+    qtbot.waitUntil(lambda: w.cards._columns == 2, timeout=5000)
+    assert sorted({w.cards.grid.getItemPosition(i)[1] for i in range(5)}) == [0, 1] and w.cards.grid.count() == 5
+    w.cards.cancel_preview()
+    _wait_idle(w, qtbot)

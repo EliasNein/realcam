@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 import shiboken6
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QImage, QImageReader, QPixmap
 from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QRadioButton, QScrollArea, QSlider,
                                QVBoxLayout, QWidget)
@@ -25,7 +25,7 @@ CARD_TEXT = {   # look -> (title key, description key); literal keys so the key 
     "dashcam-real": ("card.dashcam.title", "card.dashcam.desc"),
     None: ("card.none.title", "card.none.desc"),
 }
-THUMB = QSize(256, 144)
+THUMB = QSize(224, 126)
 SLIDER_STEP_S = 0.1          # the slider moves in tenths of a second: free positions land on a grid, so the cache can be reused
 COMMIT_DELAY_MS = 400        # keyboard or click on the slider: wait for further steps before computing
 
@@ -214,6 +214,7 @@ class CardsView(QWidget):
         grid_host = QWidget()
         grid = QGridLayout(grid_host)
         grid.setSpacing(12)
+        self.grid, self._columns = grid, 2
         self.cards: dict[str | None, LookCard] = {}
         for i, look in enumerate(LOOKS):
             card = LookCard(look)
@@ -222,13 +223,16 @@ class CardsView(QWidget):
             card.original.clicked.connect(lambda lk=look: self.open_zoom(lk))
             card.result.clicked.connect(lambda lk=look: self.open_zoom(lk))
             self.cards[look] = card
-            grid.addWidget(card, i // 2, i % 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
+        self._place_cards(2)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setWidget(grid_host)
+        self.scroll = scroll
+        scroll.viewport().installEventFilter(self)
         layout.addWidget(scroll, 1)
 
         self.message = QLabel()
@@ -251,6 +255,23 @@ class CardsView(QWidget):
         self._refresh()
 
     # ---- basics ---------------------------------------------------------------------------------
+    def _place_cards(self, columns: int) -> None:
+        self._columns = columns
+        self.grid.setColumnStretch(1, 1 if columns == 2 else 0)
+        for card in self.cards.values():
+            self.grid.removeWidget(card)
+        for i, card in enumerate(self.cards.values()):
+            self.grid.addWidget(card, i // columns, i % columns)
+
+    def eventFilter(self, obj, event) -> bool:
+        """The cards sit in one or two columns, depending on the width of the scroll area (its viewport reports its resizing)."""
+        if obj is self.scroll.viewport() and event.type() == QEvent.Resize:
+            card = next(iter(self.cards.values()))
+            columns = max(1, min(2, event.size().width() // (card.minimumSizeHint().width() + self.grid.spacing())))
+            if columns != self._columns:
+                self._place_cards(columns)
+        return super().eventFilter(obj, event)
+
     @property
     def quality(self) -> str:
         return "ai" if self.ai_radio.isChecked() else "lite"
@@ -420,7 +441,17 @@ class CardsView(QWidget):
     def _progress(self, frame: int, quality: str, text: str) -> None:
         if (frame, quality) == self._key():
             self._clear_results(text)
-        self.status.setText(text)
+        self.status.setText(self._position_text(frame, text))
+
+    def _position_text(self, frame: int, text: str) -> str:
+        """Which position the running calculation belongs to: the number of an automatic one, otherwise its time."""
+        src = self.controller.source if self._alive() else None
+        if src is None:
+            return text
+        for n, seconds in enumerate(self.controller.positions, 1):
+            if src.frame_at(seconds) == frame:
+                return t("preview.status_auto", n=n, text=text)
+        return t("preview.status_free", time=format_duration(src.seconds_of(frame)), text=text)
 
     def _failed(self, frame: int, quality: str, message: str) -> None:
         self.status.setText("")

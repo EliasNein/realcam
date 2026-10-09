@@ -112,6 +112,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "preview.pos_button": "{n} · {time}",
         "preview.cancel": "Vorschau abbrechen",
         "preview.grain_hint": "Hinweis: Korn-Looks (Subtle, Cinematic, Dashcam-real) wirken in der Vorschau stärker als im Endergebnis, weil der Encoder das Korn abschwächt. Die Vorschau zeigt das Bild vor dem Encoder. Das Original ist zum Vergleich auf dieselbe Größe hochgerechnet.",
+        "preview.status_auto": "Position {n}: {text}",
+        "preview.status_free": "Position {time}: {text}",
         "preview.searching": "Suche geeignete Positionen …",
         "preview.moved": "Position verändert – loslassen, dann wird gerechnet.",
         "preview.computing": "Berechne …",
