@@ -33,7 +33,7 @@ POSITION_COUNT = 5
 CONTEXT_FRAMES = 4         # frames rendered up to and including the still: motion blur and the motion-adaptive sharpening need neighbours
 EDGE_MARGIN_S = 1.0        # automatic positions keep this distance from start and end
 BLACK_MEAN, FLAT_STD = 12.0, 3.0   # a frame counts as black/flat below these (8-bit levels, full range)
-JPEG_QSCALE = 3            # mjpeg quality, 2 = best
+JPEG_QSCALE = 2            # mjpeg quality, 2 = best (measured on one frame: edge strength x0.94 against the raw frame, q3 x0.91)
 SHORT_SECONDS = 5.0
 SHORT_KEEP = 3             # short preview files kept for the next start
 KILL_WAIT_S = 15

@@ -267,7 +267,9 @@ class CardsView(QWidget):
         if not same:
             self._images.clear()
             self._clear_panes(t("preview.searching"))
+            self.slider.blockSignals(True)
             self.slider.setRange(0, max(int(facts.duration / SLIDER_STEP_S), 1))
+            self.slider.blockSignals(False)
         self._set_preview_enabled(False)
         self.controller.set_source(facts)
 
